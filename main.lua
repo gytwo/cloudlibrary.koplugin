@@ -48,7 +48,6 @@ function CloudLibraryPlugin:init()
     
     self.settings = G_reader_settings:readSetting(self.plugin_id, self.default_settings)
     
-    -- 延迟加载其他模块
     local AutoSync = require("auto_sync")
     local ManualSync = require("manual_sync")
     local Hooks = require("hooks")
@@ -184,6 +183,33 @@ function CloudLibraryPlugin:buildSettingsMenu()
             end,
         },
         {
+            text = _("元数据下载模式（手动）"),
+            sub_item_table = {
+                {
+                    text = _("覆盖更新"),
+                    checked_func = function()
+                        return self.settings.auto_download_mode == "override"
+                    end,
+                    callback = function()
+                        self.settings.auto_download_mode = "override"
+                        G_reader_settings:saveSetting(self.plugin_id, self.settings)
+                        utils.show_msg(_("元数据下载模式（手动）：覆盖更新"))
+                    end
+                },
+                {
+                    text = _("合并更新"),
+                    checked_func = function()
+                        return self.settings.auto_download_mode == "merge"
+                    end,
+                    callback = function()
+                        self.settings.auto_download_mode = "merge"
+                        G_reader_settings:saveSetting(self.plugin_id, self.settings)
+                        utils.show_msg(_("元数据下载模式（手动）：合并更新"))
+                    end
+                },
+            },
+        },
+        {
             text = _("自动同步设置（仅元数据）"),
             sub_item_table = self:buildAutoSyncMenu(),
             separator = true,
@@ -201,20 +227,20 @@ function CloudLibraryPlugin:buildSettingsMenu()
                     "已关闭：仅上传原始LUA文件")
             end
         },
-{
-    text = _("覆盖更新时保留本地文档设置"),
-    checked_func = function()
-        return self.settings.override_keep_local_settings == true
-    end,
-    help_text = _("开启后：覆盖更新时保留本地的字体、边距等设置，仅同步标注和进度"),
-    callback = function()
-        self.settings.override_keep_local_settings = not self.settings.override_keep_local_settings
-        G_reader_settings:saveSetting(self.plugin_id, self.settings)
-        utils.show_msg(self.settings.override_keep_local_settings and 
-            "已开启：覆盖更新时保留本地文档设置" or 
-            "已关闭：覆盖更新时完全使用云端文件")
-    end
-},
+        {
+            text = _("覆盖更新时保留本地文档设置"),
+            checked_func = function()
+                return self.settings.override_keep_local_settings == true
+            end,
+            help_text = _("开启后：覆盖更新时保留本地的字体、边距等设置，仅同步标注和进度"),
+            callback = function()
+                self.settings.override_keep_local_settings = not self.settings.override_keep_local_settings
+                G_reader_settings:saveSetting(self.plugin_id, self.settings)
+                utils.show_msg(self.settings.override_keep_local_settings and 
+                    "已开启：覆盖更新时保留本地文档设置" or 
+                    "已关闭：覆盖更新时完全使用云端文件")
+            end
+        },
         {
             text = _("开启记录云同步"),
             checked_func = function()
@@ -257,7 +283,7 @@ function CloudLibraryPlugin:confirmClearCloudLog()
 end
 
 function CloudLibraryPlugin:doClearCloudLog()
-    local utils = require("utils")  -- 添加这一行
+    local utils = require("utils")
     local NetworkMgr = require("ui/network/manager")
     
     if not NetworkMgr:isOnline() then
@@ -393,18 +419,21 @@ function CloudLibraryPlugin:buildMetadataSyncMenu()
             end
         },
         {
-            text = _("下载当前书籍元数据-覆盖更新"),
-            enabled = self.ui and self.ui.document,
-            callback = function()
-                self.manual_sync:syncCurrentBook(false)
-            end
-        },
-        {
-            text = _("下载当前书籍元数据-合并更新"),
-            enabled = self.ui and self.ui.document,
-            callback = function()
-                self.manual_sync:syncCurrentBookMerge()
-            end
+            text = _("下载当前书籍元数据"),
+            sub_item_table = {
+                {
+                    text = _("覆盖更新"),
+                    callback = function()
+                        self.manual_sync:syncCurrentBook(false)
+                    end
+                },
+                {
+                    text = _("合并更新"),
+                    callback = function()
+                        self.manual_sync:syncCurrentBookMerge()
+                    end
+                },
+            },
         },
         {
             text = _("批量上传选中书籍元数据"),
@@ -413,16 +442,21 @@ function CloudLibraryPlugin:buildMetadataSyncMenu()
             end,
         },
         {
-            text = _("批量下载选中书籍元数据-覆盖更新"),
-            callback = function()
-                self.manual_sync:batchSyncWithFMSelection(false, false)
-            end,
-        },
-        {
-            text = _("批量下载选中书籍元数据-合并更新"),
-            callback = function()
-                self.manual_sync:batchSyncWithFMSelection(false, true)
-            end,
+            text = _("批量下载选中书籍元数据"),
+            sub_item_table = {
+                {
+                    text = _("覆盖更新"),
+                    callback = function()
+                        self.manual_sync:batchSyncWithFMSelection(false, false)
+                    end
+                },
+                {
+                    text = _("合并更新"),
+                    callback = function()
+                        self.manual_sync:batchSyncWithFMSelection(false, true)
+                    end
+                },
+            },
         },
     }
 end
@@ -490,56 +524,50 @@ function CloudLibraryPlugin:buildAutoSyncMenu()
                 },
             },
         },
+{
+    text = _("自动下载更新"),
+    enabled = true,
+    sub_item_table = {
         {
-            text = _("自动下载更新"),
-            enabled = true,
-            sub_item_table = {
-                {
-                    text = _("打开书籍时自动下载"),
-                    checked_func = function()
-                        return self.settings.auto_download_on_open == true
-                    end,
-                    callback = function()
-                        self.settings.auto_download_on_open = not self.settings.auto_download_on_open
-                        self:updateAutoSyncSettings()
-                        utils.show_msg(self.settings.auto_download_on_open and "已开启：打开书籍时自动下载" or "已关闭：打开书籍时自动下载")
-                    end,
-                },
-                {
-                    text_func = function()
-                        local mode = self.settings.auto_download_mode == "merge" and "合并更新" or "覆盖更新"
-                        return "    └─ 下载模式：" .. mode
-                    end,
-                    enabled_func = function()
-                        return self.settings.auto_download_on_open == true
-                    end,
-                    sub_item_table = {
-                        {
-                            text = "覆盖更新（直接替换）",
-                            checked_func = function()
-                                return self.settings.auto_download_mode ~= "merge"
-                            end,
-                            callback = function()
-                                self.settings.auto_download_mode = "override"
-                                G_reader_settings:saveSetting(self.plugin_id, self.settings)
-                                utils.show_msg("自动下载模式：覆盖更新")
-                            end,
-                        },
-                        {
-                            text = "合并更新（保留两者）",
-                            checked_func = function()
-                                return self.settings.auto_download_mode == "merge"
-                            end,
-                            callback = function()
-                                self.settings.auto_download_mode = "merge"
-                                G_reader_settings:saveSetting(self.plugin_id, self.settings)
-                                utils.show_msg("自动下载模式：合并更新")
-                            end,
-                        },
-                    },
-                },
-            },
+            text = _("打开书籍时自动下载（覆盖更新）"),
+            checked_func = function()
+                return self.settings.auto_download_on_open and self.settings.auto_download_mode == "override"
+            end,
+            callback = function()
+                if self.settings.auto_download_on_open and self.settings.auto_download_mode == "override" then
+                    self.settings.auto_download_on_open = false
+                else
+                    self.settings.auto_download_on_open = true
+                    self.settings.auto_download_mode = "override"
+                end
+                self:updateAutoSyncSettings()
+                G_reader_settings:saveSetting(self.plugin_id, self.settings)
+                local utils = require("utils")
+                utils.show_msg(self.settings.auto_download_on_open and self.settings.auto_download_mode == "override" and 
+                    "已开启：打开书籍时自动下载（覆盖更新）" or "已关闭：打开书籍时自动下载（覆盖更新）")
+            end,
         },
+        {
+            text = _("打开书籍时自动下载（合并更新）"),
+            checked_func = function()
+                return self.settings.auto_download_on_open and self.settings.auto_download_mode == "merge"
+            end,
+            callback = function()
+                if self.settings.auto_download_on_open and self.settings.auto_download_mode == "merge" then
+                    self.settings.auto_download_on_open = false
+                else
+                    self.settings.auto_download_on_open = true
+                    self.settings.auto_download_mode = "merge"
+                end
+                self:updateAutoSyncSettings()
+                G_reader_settings:saveSetting(self.plugin_id, self.settings)
+                local utils = require("utils")
+                utils.show_msg(self.settings.auto_download_on_open and self.settings.auto_download_mode == "merge" and 
+                    "已开启：打开书籍时自动下载元数据" or "已关闭：打开书籍时自动下载元数据")
+            end,
+        },
+    },
+},
         {
             text = _("自动同步时显示通知"),
             checked_func = function()
@@ -552,95 +580,6 @@ function CloudLibraryPlugin:buildAutoSyncMenu()
             end,
         },
     }
-end
-
-function CloudLibraryPlugin:doBatchUploadBooks()
-    logger.info("CloudLibrary: doBatchUploadBooks 被调用")
-    
-    local FileManager = require("apps/filemanager/filemanager")
-    local fm = FileManager.instance
-    local utils = require("utils")
-    
-    if not fm or not fm.selected_files then
-        logger.warn("CloudLibrary: 没有选中的文件")
-        utils.show_msg(_("请先在文件管理器中勾选书籍"))
-        return
-    end
-    
-    local remote = require("remote")
-    local server = remote.get_server()
-    if not server or not server.url then
-        logger.warn("CloudLibrary: 云端目录未设置")
-        utils.show_msg(_("请先设置云端目录"))
-        return
-    end
-    
-    local naming_mode = self.settings.book_naming_mode or "title"
-    logger.info("CloudLibrary: naming_mode = " .. naming_mode)
-    
-    local selected_books = {}
-    for file, selected in pairs(fm.selected_files) do
-        if selected and lfs.attributes(file, "mode") == "file" then
-            local ext = file:match("%.([^%.]+)$")
-            if ext then
-                local book_exts = { "pdf", "epub", "mobi", "azw", "azw3", "kfx", "cbz", "cbr", "fb2", "djvu", "docx", "txt" }
-                for _, book_ext in ipairs(book_exts) do
-                    if ext:lower() == book_ext then
-                        local book_info = {
-                            path = file,
-                            basename = file:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
-                            title = title,
-                            author = author
-                        }
-                        
-                        if naming_mode == "title" or naming_mode == "title_author" then
-                            local props = {}
-                            if fm and fm.bookinfo then
-                                props = fm.bookinfo:getDocProps(file, nil, true) or {}
-                            end
-                            local title = props.title or props.display_title
-                            local author = props.authors
-                            if type(author) == "table" then
-                                author = author[1]
-                            end
-                            
-                            if not title or title == "" then
-                                title = book_info.basename
-                            end
-                            
-                            if naming_mode == "title" then
-                                book_info.title = title
-                            elseif naming_mode == "title_author" then
-                                if author and author ~= "" then
-                                    book_info.title = title .. "_" .. author
-                                else
-                                    book_info.title = title
-                                end
-                            end
-                        end
-                        
-                        table.insert(selected_books, book_info)
-                        break
-                    end
-                end
-            end
-        end
-    end
-    
-    if #selected_books == 0 then
-        utils.show_msg(_("没有选中有效的书籍文件"))
-        return
-    end
-    
-    UIManager:show(ConfirmBox:new{
-        text = string.format(_("将上传 %d 本书籍到云端，是否继续？"), #selected_books),
-        ok_text = _("继续"),
-        cancel_text = _("取消"),
-        ok_callback = function()
-            local BookSync = require("book_sync")
-            BookSync.batchUploadBooks(selected_books, naming_mode, self.settings, self)
-        end,
-    })
 end
 
 function CloudLibraryPlugin:batchDownloadBooks()
@@ -673,7 +612,6 @@ function CloudLibraryPlugin:updateAutoSyncSettings()
                       self.settings.auto_upload_on_suspend
     local has_download = self.settings.auto_download_on_open
     
-    -- 只要有任何自动同步选项开启，就启用自动同步
     self.settings.auto_sync_enabled = has_upload or has_download
     
     G_reader_settings:saveSetting(self.plugin_id, self.settings)
@@ -803,9 +741,7 @@ function CloudLibraryPlugin:showPluginInfo()
 
 【前提设置】
 1. 浏览器界面选择「菜单」→「工具」→「云存储」，添加云存储账号
-2. 插件操作：「菜单」→「工具」→「云端书库」→「设置」→选择云端目录
-   - 元数据云端目录：存放书籍元数据（.lua文件）
-   - 书籍云端目录：与元数据共用同一目录，无需另外设置
+2. 插件操作：「菜单」→「工具」→「云端书库」→「设置」→选择云端目录，用于存放书籍元数据文件、书籍文件、同步记录文件
    -不同设备应设置相同的云端目录，否则无法共享
 3. 不同设备的本地文档元数据存放位置应当保持一致（「设置」→「文档」→「书籍元数据文件夹」）。默认通常是一致的，但如果某设备更改了该设置，另一设备也应当进行相应更改，否则可能会提示找不到本地元数据文件
 
@@ -824,6 +760,9 @@ function CloudLibraryPlugin:showPluginInfo()
    - 阅读进度：取更远值
    - 阅读统计：高亮数、笔记数根据合并结果自动统计
    - 文档设置：保留本地设置
+
+【元数据下载模式（手动）】
+用于快捷切换覆盖/合并模式（不影响自动下载更新模式）
 
 【书籍同步说明】
 - 上传时若云端已存在同名文件，会直接覆盖
@@ -853,13 +792,14 @@ function CloudLibraryPlugin:showPluginInfo()
 3.可通过查看同步记录中的清空按钮和「菜单」→「工具」→「云端书库」→「设置」中的清空云端同步记录分别清空本地和云端同步记录
 
 【手势快捷操作】
-分别在阅读界面和文件管理器界面进入「设置」→「手势」→「手势管理」，选择手势后勾选阅读器和文件管理器中的云端书库相应菜单
+-分别在阅读界面和文件管理器界面进入「设置」→「手势」→「手势管理」，选择手势后勾选阅读器和文件管理器中的云端书库相应菜单
+-结合元数据下载模式设置，实现一个手势下载/批量下载（智能模式）
 
 【更新说明】
 cloudlibrary（更名后） 在小红书MetedataSync（更名前） v0.22版本的基础上添加了一些新功能，修复了一些bug：
 
 1.  添加书籍同步功能，可批量上传或下载云端书籍（v1.0）
-2.  添加手势快捷操作，可通过手势调出操作、设置菜单（v1.0）
+2.  添加手势快捷操作，可通过手势调出快捷操作、快捷设置（v1.0）
 3.  修复通过手势快捷操作时文件浏览器选择模式可能状态混乱的问题（v1.0）
 4.  修复合并更新时pdf文档崩溃的问题（v1.0）
 5.  修复合并更新时部分标注可能丢失渲染的问题（v1.0）
@@ -886,34 +826,31 @@ function CloudLibraryPlugin:onDispatcherRegisterActions()
     Dispatcher:registerAction("cloudlibrary_reader", {
         category = "none",
         event = "CloudLibraryReader",
-        title = _("云端书库-同步菜单"),
+        title = _("云端书库-快捷操作"),
         reader = true,
     })
     
     Dispatcher:registerAction("cloudlibrary_filemanager", {
         category = "none",
         event = "CloudLibraryFileManager",
-        title = _("云端书库-同步菜单"),
+        title = _("云端书库-快捷操作"),
         filemanager = true,
     })
 
--- 阅读器中的设置菜单
-Dispatcher:registerAction("cloudlibrary_settings_reader", {
-    category = "none",
-    event = "CloudLibrarySettingsReader",
-    title = _("云端书库-设置菜单"),
-    reader = true,
-})
+    Dispatcher:registerAction("cloudlibrary_settings_reader", {
+        category = "none",
+        event = "CloudLibrarySettingsReader",
+        title = _("云端书库-快捷设置"),
+        reader = true,
+    })
 
--- 文件管理器中的设置菜单
-Dispatcher:registerAction("cloudlibrary_settings_filemanager", {
-    category = "none",
-    event = "CloudLibrarySettingsFileManager",
-    title = _("云端书库-设置菜单"),
-    filemanager = true,
-})
+    Dispatcher:registerAction("cloudlibrary_settings_filemanager", {
+        category = "none",
+        event = "CloudLibrarySettingsFileManager",
+        title = _("云端书库-快捷设置"),
+        filemanager = true,
+    })
 
-    -- 新增：阅读器具体动作
     Dispatcher:registerAction("cloudlibrary_upload_current", {
         category = "none",
         event = "CloudLibraryUploadCurrent",
@@ -921,21 +858,13 @@ Dispatcher:registerAction("cloudlibrary_settings_filemanager", {
         reader = true,
     })
     
-    Dispatcher:registerAction("cloudlibrary_download_current_override", {
+    Dispatcher:registerAction("cloudlibrary_download_current", {
         category = "none",
-        event = "CloudLibraryDownloadCurrentOverride",
-        title = _("云端书库-下载当前书籍元数据-覆盖更新"),
+        event = "CloudLibraryDownloadCurrent",
+        title = _("云端书库-下载当前书籍元数据（智能模式）"),
         reader = true,
     })
     
-    Dispatcher:registerAction("cloudlibrary_download_current_merge", {
-        category = "none",
-        event = "CloudLibraryDownloadCurrentMerge",
-        title = _("云端书库-下载当前书籍元数据-合并更新"),
-        reader = true,
-    })
-    
-    -- 新增：文件管理器具体动作
     Dispatcher:registerAction("cloudlibrary_batch_upload_metadata", {
         category = "none",
         event = "CloudLibraryBatchUploadMetadata",
@@ -943,17 +872,10 @@ Dispatcher:registerAction("cloudlibrary_settings_filemanager", {
         filemanager = true,
     })
     
-    Dispatcher:registerAction("cloudlibrary_batch_download_metadata_override", {
+    Dispatcher:registerAction("cloudlibrary_batch_download_metadata_smart", {
         category = "none",
-        event = "CloudLibraryBatchDownloadMetadataOverride",
-        title = _("云端书库-批量下载选中书籍元数据-覆盖更新"),
-        filemanager = true,
-    })
-    
-    Dispatcher:registerAction("cloudlibrary_batch_download_metadata_merge", {
-        category = "none",
-        event = "CloudLibraryBatchDownloadMetadataMerge",
-        title = _("云端书库-批量下载选中书籍元数据-合并更新"),
+        event = "CloudLibraryBatchDownloadMetadataSmart",
+        title = _("云端书库-批量下载元数据（智能模式）"),
         filemanager = true,
     })
     
@@ -983,6 +905,7 @@ end
 function CloudLibraryPlugin:showSyncDialog(context)
     local buttons = {}
     local BookSync = require("book_sync")
+    local mode_text = (self.settings.auto_download_mode == "merge") and "合并更新" or "覆盖更新"
     
     if context == "reader" then
         buttons = {
@@ -996,21 +919,16 @@ function CloudLibraryPlugin:showSyncDialog(context)
                 end } 
             },
             { 
-                { text = _("下载当前书籍元数据-覆盖更新"), callback = function()
+                { text = string.format(_("下载当前书籍元数据（%s）"), mode_text), callback = function()
                     if self._current_dialog then
                         UIManager:close(self._current_dialog)
                         self._current_dialog = nil
                     end
-                    self.manual_sync:syncCurrentBook(false)
-                end } 
-            },
-            { 
-                { text = _("下载当前书籍元数据-合并更新"), callback = function()
-                    if self._current_dialog then
-                        UIManager:close(self._current_dialog)
-                        self._current_dialog = nil
+                    if self.settings.auto_download_mode == "merge" then
+                        self.manual_sync:syncCurrentBookMerge()
+                    else
+                        self.manual_sync:syncCurrentBook(false)
                     end
-                    self.manual_sync:syncCurrentBookMerge()
                 end } 
             },
             { 
@@ -1035,21 +953,13 @@ function CloudLibraryPlugin:showSyncDialog(context)
                 end } 
             },
             { 
-                { text = _("批量下载选中书籍元数据-覆盖更新"), callback = function()
+                { text = string.format(_("批量下载选中书籍元数据（%s）"), mode_text), callback = function()
                     if self._current_dialog then
                         UIManager:close(self._current_dialog)
                         self._current_dialog = nil
                     end
-                    self.manual_sync:batchSyncWithFMSelection(false, false)
-                end } 
-            },
-            { 
-                { text = _("批量下载选中书籍元数据-合并更新"), callback = function()
-                    if self._current_dialog then
-                        UIManager:close(self._current_dialog)
-                        self._current_dialog = nil
-                    end
-                    self.manual_sync:batchSyncWithFMSelection(false, true)
+                    local is_merge = (self.settings.auto_download_mode == "merge")
+                    self.manual_sync:batchSyncWithFMSelection(false, is_merge)
                 end } 
             },
             { 
@@ -1083,7 +993,7 @@ function CloudLibraryPlugin:showSyncDialog(context)
     end
     
     local dialog = ButtonDialog:new{
-        title = _("云端书库"),
+        title = _("云端书库-快捷操作"),
         title_align = "center",
         buttons = buttons,
         width = math.floor(Screen:getWidth() * 0.6),
@@ -1092,26 +1002,22 @@ function CloudLibraryPlugin:showSyncDialog(context)
     UIManager:show(dialog)
 end
 
--- 阅读器具体动作处理
 function CloudLibraryPlugin:onCloudLibraryUploadCurrent()
     if self.ui and self.ui.document then
         self.manual_sync:syncCurrentBook(true)
     end
 end
 
-function CloudLibraryPlugin:onCloudLibraryDownloadCurrentOverride()
+function CloudLibraryPlugin:onCloudLibraryDownloadCurrent()
     if self.ui and self.ui.document then
-        self.manual_sync:syncCurrentBook(false)
+        if self.settings.auto_download_mode == "merge" then
+            self.manual_sync:syncCurrentBookMerge()
+        else
+            self.manual_sync:syncCurrentBook(false)
+        end
     end
 end
 
-function CloudLibraryPlugin:onCloudLibraryDownloadCurrentMerge()
-    if self.ui and self.ui.document then
-        self.manual_sync:syncCurrentBookMerge()
-    end
-end
-
--- 直接打开设置菜单
 function CloudLibraryPlugin:onCloudLibrarySettingsReader()
     self:showSettingsDialog("reader")
 end
@@ -1227,13 +1133,28 @@ function CloudLibraryPlugin:showSettingsDialog(context)
         }
     })
     
+    -- 元数据下载模式（手动）
+    local download_mode_text = (self.settings.auto_download_mode == "merge") and "合并更新" or "覆盖更新"
+    table.insert(buttons, {
+        {
+            text = _("元数据下载模式（手动）: ") .. download_mode_text,
+            callback = function()
+                self:showManualDownloadModeDialog()
+                if self_ref._current_settings_dialog then
+                    UIManager:close(self_ref._current_settings_dialog)
+                    self_ref._current_settings_dialog = nil
+                end
+            end
+        }
+    })
+    
     table.insert(buttons, {})
     
-    -- 自动上传备份（带复选框）
+    -- 自动上传备份
     table.insert(buttons, {
         {
             text_func = function()
-                return (self.settings.auto_upload_on_annotate and "✓ " or "  ") .. _("编辑标注时自动上传")
+                return (self.settings.auto_upload_on_annotate and "✓ " or "  ") .. _("编辑标注时自动上传元数据")
             end,
             callback = function()
                 self.settings.auto_upload_on_annotate = not self.settings.auto_upload_on_annotate
@@ -1249,7 +1170,7 @@ function CloudLibraryPlugin:showSettingsDialog(context)
     table.insert(buttons, {
         {
             text_func = function()
-                return (self.settings.auto_upload_on_close and "✓ " or "  ") .. _("关闭书籍时自动上传")
+                return (self.settings.auto_upload_on_close and "✓ " or "  ") .. _("关闭书籍时自动上传元数据")
             end,
             callback = function()
                 self.settings.auto_upload_on_close = not self.settings.auto_upload_on_close
@@ -1265,7 +1186,7 @@ function CloudLibraryPlugin:showSettingsDialog(context)
     table.insert(buttons, {
         {
             text_func = function()
-                return (self.settings.auto_upload_on_suspend and "✓ " or "  ") .. _("设备休眠时自动上传")
+                return (self.settings.auto_upload_on_suspend and "✓ " or "  ") .. _("设备休眠时自动上传元数据")
             end,
             callback = function()
                 self.settings.auto_upload_on_suspend = not self.settings.auto_upload_on_suspend
@@ -1280,17 +1201,16 @@ function CloudLibraryPlugin:showSettingsDialog(context)
     
     table.insert(buttons, {})
     
-    -- 自动下载更新（覆盖模式）
-    local is_override_enabled = self.settings.auto_download_on_open and self.settings.auto_download_mode ~= "merge"
+    -- 自动下载更新选项
     table.insert(buttons, {
         {
             text_func = function()
-                local enabled = self.settings.auto_download_on_open and self.settings.auto_download_mode ~= "merge"
-                return (enabled and "✓ " or "  ") .. _("打开书籍时自动下载（覆盖更新）")
+                local enabled = self.settings.auto_download_on_open and self.settings.auto_download_mode == "override"
+                return (enabled and "✓ " or "  ") .. _("打开书籍时自动下载元数据（覆盖更新）")
             end,
             callback = function()
-                if self.settings.auto_download_on_open and self.settings.auto_download_mode == "merge" then
-                    self.settings.auto_download_mode = "override"
+                if self.settings.auto_download_on_open and self.settings.auto_download_mode == "override" then
+                    self.settings.auto_download_on_open = false
                 else
                     self.settings.auto_download_on_open = true
                     self.settings.auto_download_mode = "override"
@@ -1298,23 +1218,22 @@ function CloudLibraryPlugin:showSettingsDialog(context)
                 self:updateAutoSyncSettings()
                 G_reader_settings:saveSetting(self.plugin_id, self.settings)
                 local utils = require("utils")
-                utils.show_msg("已开启：打开书籍时自动下载（覆盖更新）")
+                utils.show_msg(self.settings.auto_download_on_open and self.settings.auto_download_mode == "override" and 
+                    "已开启：打开书籍时自动下载元数据（覆盖更新）" or "已关闭")
                 rebuildAndShow()
             end
         }
     })
     
-    -- 自动下载更新（合并模式）
-    local is_merge_enabled = self.settings.auto_download_on_open and self.settings.auto_download_mode == "merge"
     table.insert(buttons, {
         {
             text_func = function()
                 local enabled = self.settings.auto_download_on_open and self.settings.auto_download_mode == "merge"
-                return (enabled and "✓ " or "  ") .. _("打开书籍时自动下载（合并更新）")
+                return (enabled and "✓ " or "  ") .. _("打开书籍时自动下载元数据（合并更新）")
             end,
             callback = function()
-                if self.settings.auto_download_on_open and self.settings.auto_download_mode ~= "merge" then
-                    self.settings.auto_download_mode = "merge"
+                if self.settings.auto_download_on_open and self.settings.auto_download_mode == "merge" then
+                    self.settings.auto_download_on_open = false
                 else
                     self.settings.auto_download_on_open = true
                     self.settings.auto_download_mode = "merge"
@@ -1322,7 +1241,8 @@ function CloudLibraryPlugin:showSettingsDialog(context)
                 self:updateAutoSyncSettings()
                 G_reader_settings:saveSetting(self.plugin_id, self.settings)
                 local utils = require("utils")
-                utils.show_msg("已开启：打开书籍时自动下载（合并更新）")
+                utils.show_msg(self.settings.auto_download_on_open and self.settings.auto_download_mode == "merge" and 
+                    "已开启：打开书籍时自动下载元数据（合并更新）" or "已关闭")
                 rebuildAndShow()
             end
         }
@@ -1341,6 +1261,23 @@ function CloudLibraryPlugin:showSettingsDialog(context)
                 G_reader_settings:saveSetting(self.plugin_id, self.settings)
                 local utils = require("utils")
                 utils.show_msg(self.settings.upload_json and "已开启" or "已关闭")
+                rebuildAndShow()
+            end
+        }
+    })
+    
+    table.insert(buttons, {
+        {
+            text_func = function()
+                return (self.settings.override_keep_local_settings and "✓ " or "  ") .. _("覆盖更新时保留本地文档设置")
+            end,
+            callback = function()
+                self.settings.override_keep_local_settings = not self.settings.override_keep_local_settings
+                G_reader_settings:saveSetting(self.plugin_id, self.settings)
+                local utils = require("utils")
+                utils.show_msg(self.settings.override_keep_local_settings and 
+                    "已开启：覆盖更新时保留本地文档设置" or 
+                    "已关闭：覆盖更新时完全使用云端文件")
                 rebuildAndShow()
             end
         }
@@ -1382,7 +1319,7 @@ function CloudLibraryPlugin:showSettingsDialog(context)
     
     table.insert(buttons, {})
     
-    -- 查看同步记录
+    -- 查看同步记录、清空云端同步记录、插件说明、检查更新
     table.insert(buttons, {
         {
             text = _("查看同步记录"),
@@ -1396,17 +1333,58 @@ function CloudLibraryPlugin:showSettingsDialog(context)
         }
     })
     
+    table.insert(buttons, {
+        {
+            text = _("清空云端同步记录"),
+            callback = function()
+                self:confirmClearCloudLog()
+                if self_ref._current_settings_dialog then
+                    UIManager:close(self_ref._current_settings_dialog)
+                    self_ref._current_settings_dialog = nil
+                end
+            end
+        }
+    })
+    
+    table.insert(buttons, {
+        {
+            text = _("插件说明"),
+            callback = function()
+                self:showPluginInfo()
+                if self_ref._current_settings_dialog then
+                    UIManager:close(self_ref._current_settings_dialog)
+                    self_ref._current_settings_dialog = nil
+                end
+            end
+        }
+    })
+    
+    table.insert(buttons, {
+        {
+            text = _("检查更新"),
+            callback = function()
+                local update = require("update")
+                update.check_for_updates(false, self)
+                if self_ref._current_settings_dialog then
+                    UIManager:close(self_ref._current_settings_dialog)
+                    self_ref._current_settings_dialog = nil
+                end
+            end
+        }
+    })
+    
+    -- 限制菜单高度
     local dialog = ButtonDialog:new{
-        title = _("云端书库-设置菜单"),
+        title = _("云端书库-快捷设置"),
         title_align = "center",
         buttons = buttons,
         width = math.floor(Screen:getWidth() * 0.7),
+        max_height = math.floor(Screen:getHeight() * 0.5),
     }
     self._current_settings_dialog = dialog
     UIManager:show(dialog)
 end
 
--- 元数据命名方式选择对话框
 function CloudLibraryPlugin:showMetadataNamingModeDialog()
     local ButtonDialog = require("ui/widget/buttondialog")
     local UIManager = require("ui/uimanager")
@@ -1481,7 +1459,6 @@ function CloudLibraryPlugin:showMetadataNamingModeDialog()
     UIManager:show(dialog)
 end
 
--- 书籍命名方式选择对话框
 function CloudLibraryPlugin:showBookNamingModeDialog()
     local ButtonDialog = require("ui/widget/buttondialog")
     local UIManager = require("ui/uimanager")
@@ -1556,25 +1533,24 @@ function CloudLibraryPlugin:showBookNamingModeDialog()
     UIManager:show(dialog)
 end
 
--- 下载模式选择对话框（如果还需要保留的话）
-function CloudLibraryPlugin:showDownloadModeDialog()
+function CloudLibraryPlugin:showManualDownloadModeDialog()
     local ButtonDialog = require("ui/widget/buttondialog")
     local UIManager = require("ui/uimanager")
     local Screen = Device.screen
     local _ = require("gettext")
     
-    local current_mode = self.settings.auto_download_mode or "override"
+    local current_mode = self.settings.auto_download_mode or "merge"
     
     local dialog
     local buttons = {
         {
             {
-                text = (current_mode == "override" and "✓ " or "  ") .. _("覆盖更新（直接替换）"),
+                text = (current_mode == "override" and "✓ " or "  ") .. _("覆盖更新"),
                 callback = function()
                     self.settings.auto_download_mode = "override"
                     G_reader_settings:saveSetting(self.plugin_id, self.settings)
                     local utils = require("utils")
-                    utils.show_msg(_("自动下载模式：覆盖更新"))
+                    utils.show_msg(_("元数据下载模式（手动）：覆盖更新"))
                     if dialog then
                         UIManager:close(dialog)
                     end
@@ -1583,12 +1559,12 @@ function CloudLibraryPlugin:showDownloadModeDialog()
         },
         {
             {
-                text = (current_mode == "merge" and "✓ " or "  ") .. _("合并更新（保留两者）"),
+                text = (current_mode == "merge" and "✓ " or "  ") .. _("合并更新"),
                 callback = function()
                     self.settings.auto_download_mode = "merge"
                     G_reader_settings:saveSetting(self.plugin_id, self.settings)
                     local utils = require("utils")
-                    utils.show_msg(_("自动下载模式：合并更新"))
+                    utils.show_msg(_("元数据下载模式（手动）：合并更新"))
                     if dialog then
                         UIManager:close(dialog)
                     end
@@ -1609,7 +1585,7 @@ function CloudLibraryPlugin:showDownloadModeDialog()
     }
     
     dialog = ButtonDialog:new{
-        title = _("自动下载模式"),
+        title = _("元数据下载模式（手动）"),
         title_align = "center",
         buttons = buttons,
         width = math.floor(Screen:getWidth() * 0.7),
@@ -1617,17 +1593,13 @@ function CloudLibraryPlugin:showDownloadModeDialog()
     UIManager:show(dialog)
 end
 
--- 文件管理器具体动作处理
 function CloudLibraryPlugin:onCloudLibraryBatchUploadMetadata()
     self.manual_sync:batchSyncWithFMSelection(true, false)
 end
 
-function CloudLibraryPlugin:onCloudLibraryBatchDownloadMetadataOverride()
-    self.manual_sync:batchSyncWithFMSelection(false, false)
-end
-
-function CloudLibraryPlugin:onCloudLibraryBatchDownloadMetadataMerge()
-    self.manual_sync:batchSyncWithFMSelection(false, true)
+function CloudLibraryPlugin:onCloudLibraryBatchDownloadMetadataSmart()
+    local is_merge = (self.settings.auto_download_mode == "merge")
+    self.manual_sync:batchSyncWithFMSelection(false, is_merge)
 end
 
 function CloudLibraryPlugin:onCloudLibraryBatchUploadBooks()
