@@ -473,9 +473,9 @@ function CloudLibraryPlugin:buildBookSyncMenu()
             end
         },
         {
-            text = _("批量下载云端书籍"),
+            text = _("批量下载/删除云端书籍"),
             callback = function()
-                logger.info("CloudLibrary: 批量下载云端书籍 被点击")
+                logger.info("CloudLibrary: 批量下载/删除云端书籍 被点击")
                 self:batchDownloadBooks()
             end
         },
@@ -891,7 +891,7 @@ function CloudLibraryPlugin:onDispatcherRegisterActions()
     Dispatcher:registerAction("cloudlibrary_batch_download_books", {
         category = "none",
         event = "CloudLibraryBatchDownloadBooks",
-        title = _("云端书库-批量下载云端书籍文件"),
+        title = _("云端书库-批量下载/删除云端书籍文件"),
         filemanager = true,
     })
 end
@@ -974,7 +974,7 @@ function CloudLibraryPlugin:showSyncDialog(context)
                 end } 
             },
             { 
-                { text = _("批量下载云端书籍"), callback = function()
+                { text = _("批量下载/删除云端书籍"), callback = function()
                     if self._current_dialog then
                         UIManager:close(self._current_dialog)
                         self._current_dialog = nil
