@@ -56,7 +56,6 @@ local function get_file_extension(file_path)
     return ext and ("." .. ext) or ""
 end
 
--- 获取云端路径
 local function get_cloud_path(server, cloud_filename)
     local api = get_api(server)
     if not api then
@@ -90,7 +89,6 @@ function M.get_cloud_filename_for_path(book, naming_mode)
         return sanitize_filename(filename) .. ext
     end
     
-    -- title 模式
     local title = book.title
     if not title or title == "" then
         title = original_filename:gsub("%.[^%.]+$", "")
@@ -156,9 +154,8 @@ function M.write_batch_book_log(results, action)
     table.insert(new_record, string.format("操作设备: %s", device_name))
     table.insert(new_record, string.format("设备ID: %s", device_id))
     table.insert(new_record, string.format("操作类型: %s", action_text))
-    table.insert(new_record, utils.SEPARATOR_LINE) 
+    table.insert(new_record, utils.SEPARATOR_LINE)
     
-    -- 成功
     table.insert(new_record, string.format("【成功】(%d 本)", #(results.success or {})))
     table.insert(new_record, string.rep("-", 40))
     if #(results.success or {}) > 0 then
@@ -170,7 +167,6 @@ function M.write_batch_book_log(results, action)
     end
     table.insert(new_record, "")
     
-    -- 跳过
     if results.skipped and #results.skipped > 0 then
         table.insert(new_record, string.format("【跳过】(%d 本)", #results.skipped))
         table.insert(new_record, string.rep("-", 40))
@@ -180,7 +176,6 @@ function M.write_batch_book_log(results, action)
         table.insert(new_record, "")
     end
     
-    -- 失败
     table.insert(new_record, string.format("【失败】(%d 本)", #(results.failed or {})))
     table.insert(new_record, string.rep("-", 40))
     if #(results.failed or {}) > 0 then
@@ -338,7 +333,6 @@ function M.download_book(cloud_filename, target_dir, show_msg)
     
     local local_path = download_dir .. "/" .. cloud_filename
     
-    -- 文件已存在，直接跳过
     if lfs.attributes(local_path, "mode") == "file" then
         logger.info("BookSync: 文件已存在，跳过: " .. cloud_filename)
         return false, "file_exists"
@@ -412,7 +406,6 @@ function M.download_book(cloud_filename, target_dir, show_msg)
     end
 end
 
--- 删除云端书籍
 function M.delete_cloud_book(cloud_filename, show_msg)
     logger.info("BookSync: delete_cloud_book 被调用, cloud_filename=" .. tostring(cloud_filename))
     show_msg = (show_msg == nil) or show_msg
@@ -481,7 +474,6 @@ function M.delete_cloud_book(cloud_filename, show_msg)
     end
 end
 
--- 批量删除云端书籍
 function M.batch_delete_books(book_names, settings, plugin)
     logger.info("BookSync: batch_delete_books 被调用, 共 " .. #book_names .. " 本")
     
@@ -597,18 +589,6 @@ function M.get_cloud_book_list()
     return books, nil
 end
 
--- 确认删除书籍
-local function confirm_delete_books(book_names, plugin)
-    UIManager:show(ConfirmBox:new{
-        text = string.format(_("确定要删除 %d 本书籍吗？\n\n此操作不可恢复！"), #book_names),
-        ok_text = _("删除"),
-        cancel_text = _("取消"),
-        ok_callback = function()
-            M.batch_delete_books(book_names, plugin.settings, plugin)
-        end
-    })
-end
-
 function M.show_cloud_book_dialog(callback, plugin)
     logger.info("BookSync: show_cloud_book_dialog 被调用")
     
@@ -637,6 +617,18 @@ function M.show_cloud_book_dialog(callback, plugin)
     local update_buttons
     local show_search_dialog
     local clear_search
+    
+    -- 确认删除书籍
+    local function confirm_delete_books(book_names)
+        UIManager:show(ConfirmBox:new{
+            text = string.format(_("确定要删除 %d 本书籍吗？\n\n此操作不可恢复！"), #book_names),
+            ok_text = _("删除"),
+            cancel_text = _("取消"),
+            ok_callback = function()
+                M.batch_delete_books(book_names, plugin.settings, plugin)
+            end
+        })
+    end
     
     refresh_book_list = function()
         if search_keyword == "" then
@@ -819,7 +811,7 @@ function M.show_cloud_book_dialog(callback, plugin)
                         UIManager:close(dialog)
                     end
                     if #selected_names > 0 then
-                        confirm_delete_books(selected_names, plugin)
+                        confirm_delete_books(selected_names)
                     else
                         show_notification(_("未选中任何书籍"), 2)
                     end
