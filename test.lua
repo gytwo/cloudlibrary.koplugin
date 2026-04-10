@@ -252,10 +252,17 @@ function M.download_update(download_url)
         end
         
         logger.info("CloudLibrary: 开始下载到: " .. zip_path)
-        
+    -- 临时测试：用你 WebDAV 上的一个文件
+    local test_url = "https://otaru.infini-cloud.net/dav/ebooks/cloudlibrary/test.zip"
+    -- 如果你没有 test.zip，可以用任意一本已有的书
+    -- local test_url = "https://otaru.infini-cloud.net/dav/ebooks/cloudlibrary/%E6%9A%97%E9%BB%91%E5%8C%BB%E7%96%97%E5%8F%B2_%E8%8B%8F%E4%B8%8A%E8%B1%AA.epub"
+    
+    logger.info("CloudLibrary: 测试下载到: " .. zip_path)
+    logger.info("CloudLibrary: 测试 URL: " .. test_url)
+
         local ok, response = pcall(function()
             return http.request{
-                url = download_url,
+            url = test_url,  -- ← 改成测试 URL
                 sink = ltn12.sink.file(out_file),
                 headers = {
                     ["User-Agent"] = "KOReader-CloudLibrary",
