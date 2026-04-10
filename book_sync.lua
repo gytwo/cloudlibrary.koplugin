@@ -423,13 +423,6 @@ function M.delete_cloud_book(cloud_filename, show_msg)
         return false, "no_network"
     end
     
-    local api = get_api(server)
-    if not api then
-        logger.warn("BookSync: delete_cloud_book, api is nil")
-        if show_msg then show_notification(_("不支持的云服务类型"), 2) end
-        return false, "unsupported_server"
-    end
-    
     local cloud_path = get_cloud_path(server, cloud_filename)
     logger.info("BookSync: delete_cloud_book, cloud_path=" .. tostring(cloud_path))
     
@@ -441,16 +434,42 @@ function M.delete_cloud_book(cloud_filename, show_msg)
     
     local code
     if server.type == "dropbox" then
+        local api = get_api(server)
+        if not api then
+            if show_msg then show_notification(_("不支持的云服务类型"), 2) end
+            return false, "unsupported_server"
+        end
         local token = server.password
         if server.address and server.address ~= "" then
             token = api:getAccessToken(server.password, server.address)
         end
-        code = api:deleteFile(cloud_path, token)
+        -- Dropbox 删除需要 API，但 dropboxapi 也没有 deleteFile
+        -- 这里先提示不支持
+        if show_msg then show_notification(_("Dropbox 暂不支持删除云端文件"), 2) end
+        return false, "unsupported_server"
+    elseif server.type == "webdav" then
+        -- WebDAV: 直接发送 DELETE 请求
+        local http = require("socket.http")
+        local util = require("util")
+        local headers = {
+            ["User-Agent"] = "KOReader-CloudLibrary",
+            ["Authorization"] = "Basic " .. util.base64.encode(server.username .. ":" .. server.password),
+        }
+        
+        logger.info("BookSync: delete_cloud_book, 发送 DELETE 请求到: " .. cloud_path)
+        
+        local response, status_code = http.request{
+            url = cloud_path,
+            method = "DELETE",
+            headers = headers,
+        }
+        
+        code = status_code or 500
+        logger.info("BookSync: delete_cloud_book, DELETE 响应状态码: " .. tostring(code))
     else
-        code = api:deleteFile(cloud_path, server.username, server.password)
+        if show_msg then show_notification(_("不支持的云服务类型"), 2) end
+        return false, "unsupported_server"
     end
-    
-    logger.info("BookSync: delete_cloud_book, code=" .. tostring(code))
     
     if type(code) == "number" and code >= 200 and code < 300 then
         if show_msg then
