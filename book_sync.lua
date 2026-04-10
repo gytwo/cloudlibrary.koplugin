@@ -501,6 +501,11 @@ function M.batch_delete_books(book_names, settings, plugin)
     
     M.write_batch_book_log(results, "delete")
     
+    if settings then
+        settings.last_sync = os.date("%Y-%m-%d %H:%M:%S") .. " (书籍同步-批量删除)"
+        G_reader_settings:saveSetting(plugin and plugin.plugin_id or "cloud_library_plugin", settings)
+    end
+    
     local msg = string.format("删除完成: %d 成功, %d 失败", #results.success, #results.failed)
     show_notification(msg, 3)
     
@@ -617,21 +622,6 @@ function M.show_cloud_book_dialog(callback, plugin)
     local update_buttons
     local show_search_dialog
     local clear_search
-    
-    -- 保存 plugin 引用
-    local plugin_ref = plugin
-    
-    -- 确认删除书籍
-    local function confirm_delete_books(book_names)
-        UIManager:show(ConfirmBox:new{
-            text = string.format(_("确定要删除 %d 本书籍吗？\n\n此操作不可恢复！"), #book_names),
-            ok_text = _("删除"),
-            cancel_text = _("取消"),
-            ok_callback = function()
-                M.batch_delete_books(book_names, plugin_ref.settings, plugin_ref)
-            end
-        })
-    end
     
     refresh_book_list = function()
         if search_keyword == "" then
@@ -814,7 +804,15 @@ function M.show_cloud_book_dialog(callback, plugin)
                         UIManager:close(dialog)
                     end
                     if #selected_names > 0 then
-                        confirm_delete_books(selected_names)
+                        UIManager:show(ConfirmBox:new{
+                            text = string.format(_("确定要删除 %d 本书籍吗？\n\n此操作不可恢复！"), #selected_names),
+                            ok_text = _("删除"),
+                            cancel_text = _("取消"),
+                            ok_callback = function()
+                                local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
+                                M.batch_delete_books(selected_names, settings, plugin)
+                            end
+                        })
                     else
                         show_notification(_("未选中任何书籍"), 2)
                     end
