@@ -56,6 +56,24 @@ local function get_file_extension(file_path)
     return ext and ("." .. ext) or ""
 end
 
+-- 获取云端路径
+local function get_cloud_path(server, cloud_filename)
+    local api = get_api(server)
+    if not api then
+        return nil
+    end
+    
+    local base_dir = server.book_url or server.url
+    
+    if server.type == "dropbox" then
+        local url_base = base_dir:sub(-1) == "/" and base_dir or base_dir .. "/"
+        return url_base .. cloud_filename
+    else
+        local path = api:getJoinedPath(server.address, base_dir)
+        return api:getJoinedPath(path, cloud_filename)
+    end
+end
+
 function M.get_cloud_filename_for_path(book, naming_mode)
     local original_filename = book.file_path:match("([^/]+)$") or "unknown_book"
     local ext = get_file_extension(original_filename)
@@ -78,21 +96,6 @@ function M.get_cloud_filename_for_path(book, naming_mode)
         title = original_filename:gsub("%.[^%.]+$", "")
     end
     return sanitize_filename(title) .. ext
-end
-
-local function get_cloud_path(server, cloud_filename)
-    local api = get_api(server)
-    if not api then
-        return nil
-    end
-    
-    if server.type == "dropbox" then
-        local url_base = server.url:sub(-1) == "/" and server.url or server.url .. "/"
-        return url_base .. cloud_filename
-    else
-        local path = api:getJoinedPath(server.address, server.url)
-        return api:getJoinedPath(path, cloud_filename)
-    end
 end
 
 function M.check_cloud_file_exists(cloud_filename)
@@ -145,7 +148,7 @@ function M.write_batch_book_log(results, action)
     local device_name = utils.get_device_name()
     local device_id = utils.get_device_id()
     
-    local action_text = (action == "upload") and "书籍同步-批量上传" or "书籍同步-批量下载"
+    local action_text = (action == "upload") and "书籍同步-批量上传" or (action == "download") and "书籍同步-批量下载" or "书籍同步-批量删除"
     
     local new_record = {}
     table.insert(new_record, utils.SEPARATOR_LINE)
@@ -335,7 +338,7 @@ function M.download_book(cloud_filename, target_dir, show_msg)
     
     local local_path = download_dir .. "/" .. cloud_filename
     
-    -- 文件已存在，直接跳过（不下载，不重命名）
+    -- 文件已存在，直接跳过
     if lfs.attributes(local_path, "mode") == "file" then
         logger.info("BookSync: 文件已存在，跳过: " .. cloud_filename)
         return false, "file_exists"
@@ -409,6 +412,118 @@ function M.download_book(cloud_filename, target_dir, show_msg)
     end
 end
 
+-- 删除云端书籍
+function M.delete_cloud_book(cloud_filename, show_msg)
+    logger.info("BookSync: delete_cloud_book 被调用, cloud_filename=" .. tostring(cloud_filename))
+    show_msg = (show_msg == nil) or show_msg
+    
+    local server = get_server()
+    if not server then
+        logger.warn("BookSync: delete_cloud_book, server is nil")
+        if show_msg then show_notification(_("未配置云存储服务"), 2) end
+        return false, "no_server_config"
+    end
+    
+    if not NetworkMgr:isOnline() then
+        logger.warn("BookSync: delete_cloud_book, 网络未连接")
+        if show_msg then show_notification(_("设备未连接到网络"), 2) end
+        return false, "no_network"
+    end
+    
+    local api = get_api(server)
+    if not api then
+        logger.warn("BookSync: delete_cloud_book, api is nil")
+        if show_msg then show_notification(_("不支持的云服务类型"), 2) end
+        return false, "unsupported_server"
+    end
+    
+    local cloud_path = get_cloud_path(server, cloud_filename)
+    logger.info("BookSync: delete_cloud_book, cloud_path=" .. tostring(cloud_path))
+    
+    if not cloud_path then
+        logger.warn("BookSync: delete_cloud_book, cloud_path is nil")
+        if show_msg then show_notification(_("无法构建云端路径"), 2) end
+        return false, "path_error"
+    end
+    
+    local code
+    if server.type == "dropbox" then
+        local token = server.password
+        if server.address and server.address ~= "" then
+            token = api:getAccessToken(server.password, server.address)
+        end
+        code = api:deleteFile(cloud_path, token)
+    else
+        code = api:deleteFile(cloud_path, server.username, server.password)
+    end
+    
+    logger.info("BookSync: delete_cloud_book, code=" .. tostring(code))
+    
+    if type(code) == "number" and code >= 200 and code < 300 then
+        if show_msg then
+            show_notification(string.format(_("✓ 删除成功: %s"), cloud_filename), 2)
+        end
+        return true, "success"
+    elseif type(code) == "number" and code == 404 then
+        logger.warn("BookSync: delete_cloud_book, 文件不存在")
+        if show_msg then show_notification(_("云端文件不存在"), 2) end
+        return false, "file_not_found"
+    elseif type(code) == "number" and code == 401 then
+        logger.warn("BookSync: delete_cloud_book, 认证失败")
+        if show_msg then show_notification(_("云存储认证失败"), 2) end
+        return false, "auth_failed"
+    else
+        logger.warn("BookSync: delete_cloud_book, 删除失败, code=" .. tostring(code))
+        if show_msg then
+            show_notification(string.format(_("删除失败 (HTTP %s)"), tostring(code)), 3)
+        end
+        return false, "delete_failed"
+    end
+end
+
+-- 批量删除云端书籍
+function M.batch_delete_books(book_names, settings, plugin)
+    logger.info("BookSync: batch_delete_books 被调用, 共 " .. #book_names .. " 本")
+    
+    local results = {
+        success = {},
+        failed = {}
+    }
+    
+    for _, filename in ipairs(book_names) do
+        local success, error_msg = M.delete_cloud_book(filename, false)
+        
+        if success then
+            table.insert(results.success, {
+                name = filename,
+            })
+        else
+            table.insert(results.failed, {
+                name = filename,
+                reason = error_msg
+            })
+        end
+        
+        UIManager:scheduleIn(0.01, function() end)
+    end
+    
+    M.write_batch_book_log(results, "delete")
+    
+    local msg = string.format("删除完成: %d 成功, %d 失败", #results.success, #results.failed)
+    show_notification(msg, 3)
+    
+    if #results.failed > 0 then
+        UIManager:scheduleIn(0.5, function()
+            local fail_msg = M.formatFailureDetails(results.failed)
+            local TextViewer = require("ui/widget/textviewer")
+            UIManager:show(TextViewer:new{
+                title = _("删除失败详情"),
+                text = fail_msg,
+            })
+        end)
+    end
+end
+
 function M.get_cloud_book_list()
     logger.info("BookSync: get_cloud_book_list 被调用")
     local server = get_server()
@@ -417,7 +532,7 @@ function M.get_cloud_book_list()
         return nil, "未配置云存储服务"
     end
     
-    local book_dir = server.url
+    local book_dir = server.book_url or server.url
     if not book_dir or book_dir == "" then
         logger.warn("BookSync: get_cloud_book_list, 云端目录未设置")
         return nil, "云端目录未设置"
@@ -482,7 +597,19 @@ function M.get_cloud_book_list()
     return books, nil
 end
 
-function M.show_cloud_book_dialog(callback)
+-- 确认删除书籍
+local function confirm_delete_books(book_names, plugin)
+    UIManager:show(ConfirmBox:new{
+        text = string.format(_("确定要删除 %d 本书籍吗？\n\n此操作不可恢复！"), #book_names),
+        ok_text = _("删除"),
+        cancel_text = _("取消"),
+        ok_callback = function()
+            M.batch_delete_books(book_names, plugin.settings, plugin)
+        end
+    })
+end
+
+function M.show_cloud_book_dialog(callback, plugin)
     logger.info("BookSync: show_cloud_book_dialog 被调用")
     
     local books, err = M.get_cloud_book_list()
@@ -661,7 +788,7 @@ function M.show_cloud_book_dialog(callback)
                 end
             },
             {
-                text = string.format(_("确定 (%d)"), selected_count),
+                text = string.format(_("下载 (%d)"), selected_count),
                 callback = function()
                     local selected_names = {}
                     for _, book in ipairs(original_books) do
@@ -680,6 +807,25 @@ function M.show_cloud_book_dialog(callback)
                 end
             },
             {
+                text = string.format(_("删除 (%d)"), selected_count),
+                callback = function()
+                    local selected_names = {}
+                    for _, book in ipairs(original_books) do
+                        if selected[book.name] then
+                            table.insert(selected_names, book.name)
+                        end
+                    end
+                    if dialog then
+                        UIManager:close(dialog)
+                    end
+                    if #selected_names > 0 then
+                        confirm_delete_books(selected_names, plugin)
+                    else
+                        show_notification(_("未选中任何书籍"), 2)
+                    end
+                end
+            },
+            {
                 text = _("取消"),
                 callback = function()
                     if dialog then
@@ -690,7 +836,7 @@ function M.show_cloud_book_dialog(callback)
         })
         
         dialog = ButtonDialog:new{
-            title = string.format(_("选择要下载的书籍 (已选 %d 本)"), selected_count),
+            title = string.format(_("请选择要下载/删除的书籍 (已选 %d 本)"), selected_count),
             title_align = "center",
             buttons = buttons,
             width = math.floor(Screen:getWidth() * 0.85),
@@ -759,7 +905,7 @@ function M.batchUploadBooks(selected_books, naming_mode, settings, plugin)
     }
     
     for _, book_info in ipairs(selected_books) do
-        local path = book_info.path
+        local path = book_info.path or book_info.file_path
         local local_name = path:match("([^/]+)$") or "未知"
         
         local cloud_name = M.get_cloud_filename_for_path({
@@ -863,7 +1009,6 @@ function M.batchDownloadBooks(book_names, settings, plugin)
     settings.last_sync = os.date("%Y-%m-%d %H:%M:%S") .. " (书籍同步-批量下载)"
     G_reader_settings:saveSetting(plugin.plugin_id, settings)
     
-    -- 显示结果通知（包含跳过数量）
     local msg = string.format("下载完成: %d 成功, %d 失败, %d 跳过", 
         #results.success, #results.failed, #results.skipped)
     UIManager:show(Notification:new{
@@ -871,7 +1016,6 @@ function M.batchDownloadBooks(book_names, settings, plugin)
         timeout = 2
     })
     
-    -- 只显示失败详情
     if #results.failed > 0 then
         UIManager:scheduleIn(0.5, function()
             local fail_msg = M.formatFailureDetails(results.failed)
@@ -883,13 +1027,11 @@ function M.batchDownloadBooks(book_names, settings, plugin)
         end)
     end
     
-    -- 刷新文件管理器
     M.refreshFileManager()
     
     logger.info("BookSync: 批量下载完成, 成功:" .. #results.success .. ", 失败:" .. #results.failed .. ", 跳过:" .. #results.skipped)
 end
 
--- 新增：刷新文件管理器
 function M.refreshFileManager()
     local FileManager = require("apps/filemanager/filemanager")
     local fm = FileManager.instance
@@ -964,7 +1106,6 @@ function M.batchUploadWithFMSelection(plugin)
     local action_text = "上传"
     local button_text = "批量上传选中书籍"
     
-    -- 如果没有文件管理器界面，先进入
     if not ui or not ui.file_chooser then
         local FileManager = require("apps/filemanager/filemanager")
         
@@ -992,7 +1133,6 @@ function M.batchUploadWithFMSelection(plugin)
         return
     end
     
-    -- 已经在文件管理器界面
     local FileManager = require("apps/filemanager/filemanager")
     local fm = FileManager.instance
     
@@ -1004,9 +1144,7 @@ function M.batchUploadWithFMSelection(plugin)
         return
     end
     
-    -- 检查是否在选择模式：selected_files 不为 nil 表示已在选择模式
     if fm.selected_files == nil then
-        -- 不在选择模式，进入选择模式
         fm:onToggleSelectMode(true)
         UIManager:show(Notification:new{
             text = string.format(_("请勾选要%s的书籍，再点击「%s」"), action_text, button_text),
@@ -1015,7 +1153,6 @@ function M.batchUploadWithFMSelection(plugin)
         return
     end
     
-    -- 已在选择模式，获取选中的文件
     local selected_files = fm.selected_files
     if not selected_files or next(selected_files) == nil then
         UIManager:show(Notification:new{
@@ -1025,7 +1162,6 @@ function M.batchUploadWithFMSelection(plugin)
         return
     end
     
-    -- 有选中文件，构建书籍列表
     local books = {}
     for file, selected in pairs(selected_files) do
         if selected and lfs.attributes(file, "mode") == "file" then
@@ -1053,10 +1189,12 @@ function M.batchUploadWithFMSelection(plugin)
                 end
                 
                 table.insert(books, {
+                    file_path = file,
                     path = file,
                     name = filename,
                     title = title,
                     author = author,
+                    book_basename = basename,
                 })
             end
         end
