@@ -593,6 +593,7 @@ function CloudLibraryPlugin:batchDownloadBooks()
     end
     
     local BookSync = require("book_sync")
+    -- 修改这里：传入 self 作为第二个参数
     BookSync.show_cloud_book_dialog(function(book_names)
         logger.info("CloudLibrary: 选择下载书籍, 共 " .. #book_names .. " 本")
         UIManager:show(ConfirmBox:new{
@@ -603,7 +604,7 @@ function CloudLibraryPlugin:batchDownloadBooks()
                 BookSync.batchDownloadBooks(book_names, self.settings, self)
             end,
         })
-    end)
+    end, self)  -- ← 加上这个 self
 end
 
 function CloudLibraryPlugin:updateAutoSyncSettings()
