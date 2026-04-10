@@ -77,7 +77,7 @@ When enabled, an additional JSON file converted from the original metadata file 
 #### Update Notes
 cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 version of MetedataSync (previous name) from Xiaohongshu:
 
-1.  Added book sync functionality, allowing batch upload or download of cloud books (v1.0)
+1.  Added book sync functionality, allowing batch upload, download, or deletion of cloud books (v1.0)
 2.  Added gesture shortcuts, allowing quick actions and quick settings via gestures (v1.0)
 3.  Fixed potential state confusion in file browser selection mode when using gesture shortcuts (v1.0)
 4.  Fixed crash issue with PDF documents during merge update (v1.0)
