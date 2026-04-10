@@ -847,7 +847,7 @@ function M.show_cloud_book_dialog(callback, plugin)
                     end
                     if #selected_names > 0 then
                         UIManager:show(ConfirmBox:new{
-                            text = string.format(_("确定要删除 %d 本书籍吗？\n\n此操作不可恢复！"), #selected_names),
+                            text = string.format(_("确定要删除云端的 %d 本书籍吗？\n此操作不可恢复！"), #selected_names),
                             ok_text = _("删除"),
                             cancel_text = _("取消"),
                             ok_callback = function()
