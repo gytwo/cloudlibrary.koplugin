@@ -618,6 +618,9 @@ function M.show_cloud_book_dialog(callback, plugin)
     local show_search_dialog
     local clear_search
     
+    -- 保存 plugin 引用
+    local plugin_ref = plugin
+    
     -- 确认删除书籍
     local function confirm_delete_books(book_names)
         UIManager:show(ConfirmBox:new{
@@ -625,7 +628,7 @@ function M.show_cloud_book_dialog(callback, plugin)
             ok_text = _("删除"),
             cancel_text = _("取消"),
             ok_callback = function()
-                M.batch_delete_books(book_names, plugin.settings, plugin)
+                M.batch_delete_books(book_names, plugin_ref.settings, plugin_ref)
             end
         })
     end
