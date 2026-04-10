@@ -444,16 +444,15 @@ function M.delete_cloud_book(cloud_filename, show_msg)
             token = api:getAccessToken(server.password, server.address)
         end
         -- Dropbox 删除需要 API，但 dropboxapi 也没有 deleteFile
-        -- 这里先提示不支持
         if show_msg then show_notification(_("Dropbox 暂不支持删除云端文件"), 2) end
         return false, "unsupported_server"
     elseif server.type == "webdav" then
         -- WebDAV: 直接发送 DELETE 请求
         local http = require("socket.http")
-        local util = require("util")
+        local sha2 = require("ffi/sha2")
         local headers = {
             ["User-Agent"] = "KOReader-CloudLibrary",
-            ["Authorization"] = "Basic " .. util.base64.encode(server.username .. ":" .. server.password),
+            ["Authorization"] = "Basic " .. sha2.bin_to_base64(server.username .. ":" .. server.password),
         }
         
         logger.info("BookSync: delete_cloud_book, 发送 DELETE 请求到: " .. cloud_path)
