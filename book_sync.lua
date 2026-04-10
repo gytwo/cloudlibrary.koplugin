@@ -474,7 +474,7 @@ function M.delete_cloud_book(cloud_filename, show_msg)
     end
 end
 
-function M.batch_delete_books(book_names, settings, plugin)
+function M.batch_delete_books(book_names, settings)
     logger.info("BookSync: batch_delete_books 被调用, 共 " .. #book_names .. " 本")
     
     local results = {
@@ -503,7 +503,7 @@ function M.batch_delete_books(book_names, settings, plugin)
     
     if settings then
         settings.last_sync = os.date("%Y-%m-%d %H:%M:%S") .. " (书籍同步-批量删除)"
-        G_reader_settings:saveSetting(plugin and plugin.plugin_id or "cloud_library_plugin", settings)
+        G_reader_settings:saveSetting("cloud_library_plugin", settings)
     end
     
     local msg = string.format("删除完成: %d 成功, %d 失败", #results.success, #results.failed)
@@ -810,7 +810,7 @@ function M.show_cloud_book_dialog(callback, plugin)
                             cancel_text = _("取消"),
                             ok_callback = function()
                                 local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
-                                M.batch_delete_books(selected_names, settings, plugin)
+                                M.batch_delete_books(selected_names, settings)
                             end
                         })
                     else
