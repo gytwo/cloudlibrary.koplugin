@@ -434,18 +434,42 @@ function M.delete_cloud_book(cloud_filename, show_msg)
     
     local code
     if server.type == "dropbox" then
-        local api = get_api(server)
-        if not api then
-            if show_msg then show_notification(_("不支持的云服务类型"), 2) end
-            return false, "unsupported_server"
-        end
+        -- Dropbox: 直接发送 DELETE 请求到 API
+        local http = require("socket.http")
+        local ltn12 = require("ltn12")
+        local json = require("json")
+        
         local token = server.password
         if server.address and server.address ~= "" then
-            token = api:getAccessToken(server.password, server.address)
+            -- 需要先获取 access token
+            local api = get_api(server)
+            if api then
+                local new_token = api:getAccessToken(server.password, server.address)
+                if new_token then
+                    token = new_token
+                end
+            end
         end
-        -- Dropbox 删除需要 API，但 dropboxapi 也没有 deleteFile
-        if show_msg then show_notification(_("Dropbox 暂不支持删除云端文件"), 2) end
-        return false, "unsupported_server"
+        
+        local data = json.encode({ path = cloud_path })
+        local headers = {
+            ["Authorization"] = "Bearer " .. token,
+            ["Content-Type"] = "application/json",
+            ["Content-Length"] = tostring(#data),
+        }
+        
+        logger.info("BookSync: delete_cloud_book, 发送 Dropbox DELETE 请求")
+        
+        local response, status_code = http.request{
+            url = "https://api.dropboxapi.com/2/files/delete_v2",
+            method = "POST",
+            headers = headers,
+            source = ltn12.source.string(data),
+        }
+        
+        code = status_code or 500
+        logger.info("BookSync: delete_cloud_book, Dropbox 响应状态码: " .. tostring(code))
+        
     elseif server.type == "webdav" then
         -- WebDAV: 直接发送 DELETE 请求
         local http = require("socket.http")
@@ -455,7 +479,7 @@ function M.delete_cloud_book(cloud_filename, show_msg)
             ["Authorization"] = "Basic " .. sha2.bin_to_base64(server.username .. ":" .. server.password),
         }
         
-        logger.info("BookSync: delete_cloud_book, 发送 DELETE 请求到: " .. cloud_path)
+        logger.info("BookSync: delete_cloud_book, 发送 WebDAV DELETE 请求到: " .. cloud_path)
         
         local response, status_code = http.request{
             url = cloud_path,
@@ -464,7 +488,7 @@ function M.delete_cloud_book(cloud_filename, show_msg)
         }
         
         code = status_code or 500
-        logger.info("BookSync: delete_cloud_book, DELETE 响应状态码: " .. tostring(code))
+        logger.info("BookSync: delete_cloud_book, WebDAV 响应状态码: " .. tostring(code))
     else
         if show_msg then show_notification(_("不支持的云服务类型"), 2) end
         return false, "unsupported_server"
@@ -481,7 +505,7 @@ function M.delete_cloud_book(cloud_filename, show_msg)
         return false, "file_not_found"
     elseif type(code) == "number" and code == 401 then
         logger.warn("BookSync: delete_cloud_book, 认证失败")
-        if show_msg then show_notification(_("云存储认证失败"), 2) end
+        if show_msg then show_notification(_("云存储认证失败，请重新配置"), 3) end
         return false, "auth_failed"
     else
         logger.warn("BookSync: delete_cloud_book, 删除失败, code=" .. tostring(code))
