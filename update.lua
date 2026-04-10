@@ -25,7 +25,6 @@ local plugin_dir
 local current_file_path = (...)
 
 if is_android then
-    -- Android: 使用 DataStorage 方式
     local data_dir = DataStorage:getDataDir()
     if data_dir:sub(1, 2) == "./" then
         data_dir = data_dir:sub(3)
@@ -37,7 +36,6 @@ if is_android then
     end
     plugin_dir = data_dir .. "plugins/cloudlibrary.koplugin/"
 else
-    -- Kindle: 使用 ... 获取绝对路径
     plugin_dir = current_file_path:match("(.*/)cloudlibrary.koplugin/")
     if not plugin_dir then
         local data_dir = DataStorage:getDataDir()
@@ -84,6 +82,73 @@ local function get_current_version()
     return version or "v1.0"
 end
 
+-- 获取所有版本列表（分页获取）
+function M.get_all_versions()
+    local page = 1
+    local all_versions = {}
+    
+    while true do
+        local url = string.format("https://gitee.com/api/v5/repos/%s/%s/releases?page=%d&per_page=100", REPO_OWNER, REPO_NAME, page)
+        
+        logger.info("CloudLibrary: 请求版本列表 URL: " .. url)
+        
+        local http = require("socket.http")
+        local ltn12 = require("ltn12")
+        
+        local response = {}
+        local ok, err = pcall(function()
+            return http.request{
+                url = url,
+                sink = ltn12.sink.table(response),
+                headers = {
+                    ["User-Agent"] = "KOReader-CloudLibrary",
+                    ["Accept"] = "application/json",
+                }
+            }
+        end)
+        
+        if not ok or not response or #response == 0 then
+            break
+        end
+        
+        local response_str = table.concat(response)
+        local json = require("json")
+        local success, data = pcall(json.decode, response_str)
+        
+        if not success or not data or #data == 0 then
+            break
+        end
+        
+        for _, release in ipairs(data) do
+            local tag_name = release.tag_name or release.name
+            if tag_name then
+                -- 获取 zip 包地址
+                local zip_url = nil
+                if release.assets then
+                    for _, asset in ipairs(release.assets) do
+                        if asset.name and asset.name:match("%.zip$") then
+                            zip_url = asset.browser_download_url
+                            break
+                        end
+                    end
+                end
+                table.insert(all_versions, {
+                    tag = tag_name,
+                    url = zip_url,
+                    body = release.body,
+                })
+            end
+        end
+        
+        if #data < 100 then
+            break
+        end
+        page = page + 1
+    end
+    
+    return all_versions
+end
+
 function M.get_latest_version()
     local url = string.format("https://gitee.com/api/v5/repos/%s/%s/releases/latest", REPO_OWNER, REPO_NAME)
     
@@ -106,12 +171,12 @@ function M.get_latest_version()
     
     if not ok then
         logger.warn("CloudLibrary: HTTP 请求异常: " .. tostring(err))
-        return nil, "网络请求异常"
+        return nil, nil, "网络请求异常"
     end
     
     if not response or #response == 0 then
         logger.warn("CloudLibrary: 响应为空")
-        return nil, "服务器无响应"
+        return nil, nil, "服务器无响应"
     end
     
     local response_str = table.concat(response)
@@ -121,13 +186,13 @@ function M.get_latest_version()
     
     if not success or not data then
         logger.warn("CloudLibrary: JSON 解析失败")
-        return nil, "解析版本信息失败"
+        return nil, nil, "解析版本信息失败"
     end
     
     local tag_name = data.tag_name or data.name
     if not tag_name then
         logger.warn("CloudLibrary: 未找到版本号")
-        return nil, "未找到版本号"
+        return nil, nil, "未找到版本号"
     end
     
     logger.info("CloudLibrary: 最新版本: " .. tag_name)
@@ -172,10 +237,9 @@ function M.is_newer_version(current, latest)
     return false
 end
 
--- 下载函数：根据设备选择不同方式
+-- 下载函数
 function M.download_update(download_url)
     if is_android then
-        -- Android: 使用 socket.http 下载到 plugins 目录
         local data_dir = get_data_dir()
         local zip_path = data_dir .. "plugins/cloudlibrary.koplugin.zip"
         
@@ -219,7 +283,6 @@ function M.download_update(download_url)
         
         return zip_path
     else
-        -- Kindle: 使用 wget/curl 下载到 /tmp
         local temp_file = "/tmp/cloudlibrary.koplugin.zip"
         
         local cmd = string.format("wget -O %s %s", temp_file, download_url)
@@ -245,10 +308,9 @@ function M.download_update(download_url)
     end
 end
 
--- 安装函数：根据设备选择不同方式
+-- 安装函数
 function M.install_update(zip_path)
     if is_android then
-        -- Android: 只提示手动解压
         local data_dir = get_data_dir()
         UIManager:show(ConfirmBox:new{
             text = string.format(_("更新包已下载完成\n\n文件位置: %splugins/cloudlibrary.koplugin.zip\n\n请手动解压到 plugins 目录后重启 KOReader"), data_dir),
@@ -256,7 +318,6 @@ function M.install_update(zip_path)
         })
         return true
     else
-        -- Kindle: 自动解压到插件目录
         logger.info("CloudLibrary: 解压到插件目录: " .. plugin_dir)
         
         local result = os.execute(string.format("unzip -o %s -d %s", zip_path, plugin_dir))
@@ -275,6 +336,52 @@ function M.install_update(zip_path)
         
         return result == 0
     end
+end
+
+-- 显示版本选择对话框（用于回退）
+-- 显示版本选择对话框（用于回退）
+local function show_version_choice(versions, current_version, plugin)
+    local gettext = require("gettext")
+    local buttons = {}
+    
+    for _, v in ipairs(versions) do
+        local is_current = (v.tag == current_version)
+        local button_text = is_current and string.format(gettext("当前版本: %s (重新下载)"), v.tag) or string.format(gettext("回退到 %s"), v.tag)
+        
+        table.insert(buttons, {
+            {
+                text = button_text,
+                callback = function()
+                    UIManager:close(plugin._version_dialog)
+                    plugin._version_dialog = nil
+                    M.perform_update(v.url, plugin, v.tag)
+                end
+            }
+        })
+    end
+    
+    table.insert(buttons, {})
+    table.insert(buttons, {
+        {
+            text = gettext("取消"),
+            callback = function()
+                if plugin._version_dialog then
+                    UIManager:close(plugin._version_dialog)
+                    plugin._version_dialog = nil
+                end
+            end
+        }
+    })
+    
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local Screen = Device.screen
+    plugin._version_dialog = ButtonDialog:new{
+        title = gettext("选择要下载的版本"),
+        title_align = "center",
+        buttons = buttons,
+        width = math.floor(Screen:getWidth() * 0.7),
+    }
+    UIManager:show(plugin._version_dialog)
 end
 
 function M.check_for_updates(silent, plugin)
@@ -311,6 +418,7 @@ function M.check_for_updates(silent, plugin)
         local current_version = get_current_version()
         
         if M.is_newer_version(current_version, latest_version) then
+            -- 有新版本，提示更新
             local message = string.format(_("发现新版本: %s\n当前版本: %s\n\n是否下载并安装更新？"), latest_version, current_version)
             
             if release_notes and release_notes ~= "" then
@@ -330,17 +438,36 @@ function M.check_for_updates(silent, plugin)
                 end
             })
         else
-            if not silent then
-                UIManager:show(Notification:new{
-                    text = string.format(_("已是最新版本 (%s)"), current_version),
-                    timeout = 2
-                })
-            end
+            -- 已是最新版本，询问是否需要回退
+            UIManager:show(ConfirmBox:new{
+                text = string.format(_("当前已是最新版本 (%s)\n\n是否需要回退到之前的版本？"), current_version),
+                ok_text = _("回退"),
+                cancel_text = _("取消"),
+                ok_callback = function()
+                    -- 获取所有版本列表
+                    UIManager:show(InfoMessage:new{
+                        text = _("正在获取版本列表..."),
+                        timeout = 1
+                    })
+                    
+                    UIManager:scheduleIn(0.5, function()
+                        local all_versions = M.get_all_versions()
+                        if not all_versions or #all_versions == 0 then
+                            UIManager:show(Notification:new{
+                                text = _("获取版本列表失败"),
+                                timeout = 2
+                            })
+                            return
+                        end
+                        show_version_choice(all_versions, current_version, plugin)
+                    end)
+                end
+            })
         end
     end)
 end
 
-function M.perform_update(download_url, plugin)
+function M.perform_update(download_url, plugin, target_version)
     if not download_url then
         UIManager:show(Notification:new{
             text = _("未找到更新包下载地址"),
@@ -349,8 +476,9 @@ function M.perform_update(download_url, plugin)
         return
     end
     
+    local version_text = target_version and (" (" .. target_version .. ")") or ""
     UIManager:show(InfoMessage:new{
-        text = _("正在下载更新..."),
+        text = _("正在下载更新") .. version_text .. "...",
         timeout = 1
     })
     
@@ -366,7 +494,7 @@ function M.perform_update(download_url, plugin)
         end
         
         UIManager:show(InfoMessage:new{
-            text = _("正在安装更新..."),
+            text = _("正在安装更新") .. version_text .. "...",
             timeout = 1
         })
         
