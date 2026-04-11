@@ -731,7 +731,9 @@ function CloudLibraryPlugin:showPluginInfo()
 插件作者：小红书gytwo
 更新时间：2026/4/11
 版本号：v1.1
-项目地址：https://gitee.com/gytwo/cloudlibrary
+项目地址：
+https://gitee.com/gytwo/cloudlibrary.koplugin
+https://github.com/gytwo/cloudlibrary.koplugin
 
 【插件名称】
 云端书库 - 在设备间同步书籍及元数据
