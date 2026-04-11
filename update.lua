@@ -239,84 +239,74 @@ end
 
 -- 下载函数
 function M.download_update(download_url)
+    -- 确定保存路径
+    local zip_path
     if is_android then
         local data_dir = get_data_dir()
-        local zip_path = data_dir .. "plugins/cloudlibrary.koplugin.zip"
-        
-        local http = require("socket.http")
-        local ltn12 = require("ltn12")
-        
-        local out_file = io.open(zip_path, "w")
-        if not out_file then
-            return nil, "无法创建文件"
+        local plugins_dir = data_dir .. "plugins"
+        zip_path = plugins_dir .. "/cloudlibrary.koplugin.zip"
+        -- 确保目录存在
+        if lfs.attributes(plugins_dir, "mode") ~= "directory" then
+            os.execute("mkdir -p " .. plugins_dir)
         end
-        
-        logger.info("CloudLibrary: 开始下载到: " .. zip_path)
-        
-        local ok, response = pcall(function()
-            return http.request{
-                url = download_url,
-                sink = ltn12.sink.file(out_file),
-                headers = {
-                    ["User-Agent"] = "KOReader-CloudLibrary",
-                }
-            }
-        end)
-        
-        out_file:close()
-        
-        if not ok then
-            os.remove(zip_path)
-            return nil, "下载失败"
-        end
-        
-        if type(response) == "number" and (response < 200 or response >= 300) then
-            os.remove(zip_path)
-            return nil, string.format("HTTP 错误: %d", response)
-        end
-        
-        local size = lfs.attributes(zip_path, "size") or 0
-        if size < 1000 then
-            os.remove(zip_path)
-            return nil, "下载的文件无效"
-        end
-        
-        return zip_path
     else
-        local temp_file = "/tmp/cloudlibrary.koplugin.zip"
-        
-        local cmd = string.format("wget -O %s %s", temp_file, download_url)
-        local result = os.execute(cmd)
-        
-        if result ~= 0 then
-            cmd = string.format("curl -o %s %s", temp_file, download_url)
-            result = os.execute(cmd)
-        end
-        
-        if result ~= 0 then
-            os.remove(temp_file)
-            return nil, "下载失败"
-        end
-        
-        local size = lfs.attributes(temp_file, "size") or 0
-        if size < 1000 then
-            os.remove(temp_file)
-            return nil, "下载的文件无效"
-        end
-        
-        return temp_file
+        zip_path = "/tmp/cloudlibrary.koplugin.zip"
     end
+    
+    -- 统一使用 curl（带 -L 跟随重定向）
+    local cmd = string.format("curl -L -o '%s' '%s' 2>/dev/null", zip_path, download_url)
+    local result = os.execute(cmd)
+    
+    -- curl 失败则尝试 wget
+    if result ~= 0 then
+        cmd = string.format("wget --max-redirect=5 -O '%s' '%s' 2>/dev/null", zip_path, download_url)
+        result = os.execute(cmd)
+    end
+    
+    -- 再尝试 busybox wget
+    if result ~= 0 then
+        cmd = string.format("busybox wget -O '%s' '%s' 2>/dev/null", zip_path, download_url)
+        result = os.execute(cmd)
+    end
+    
+    if result ~= 0 then
+        os.remove(zip_path)
+        return nil, "下载失败"
+    end
+    
+    -- 检查文件大小
+    local size = lfs.attributes(zip_path, "size") or 0
+    if size < 1000 then
+        os.remove(zip_path)
+        return nil, "下载的文件无效"
+    end
+    
+    logger.info("CloudLibrary: 下载完成，大小: " .. size .. " 字节")
+    return zip_path
 end
 
 -- 安装函数
 function M.install_update(zip_path)
     if is_android then
-        local data_dir = get_data_dir()
-        UIManager:show(ConfirmBox:new{
-            text = string.format(_("更新包已下载完成\n\n文件位置: %splugins/cloudlibrary.koplugin.zip\n\n请手动解压到 plugins 目录后重启 KOReader"), data_dir),
-            ok_text = _("确定"),
-        })
-        return true
+        if lfs.attributes(plugin_dir, "mode") ~= "directory" then
+            os.execute("mkdir -p " .. plugin_dir)
+        end
+        
+        local result = os.execute(string.format("unzip -o -q '%s' -d '%s' 2>/dev/null", zip_path, plugin_dir))
+        
+        if result ~= 0 then
+            result = os.execute(string.format("busybox unzip -o -q '%s' -d '%s' 2>/dev/null", zip_path, plugin_dir))
+        end
+        
+        os.remove(zip_path)
+        
+        if result == 0 then
+            logger.info("CloudLibrary: Android 自动安装成功")
+            return true
+        else
+            logger.warn("CloudLibrary: Android 自动安装失败")
+            return false
+        end
     else
         logger.info("CloudLibrary: 解压到插件目录: " .. plugin_dir)
         
@@ -338,7 +328,6 @@ function M.install_update(zip_path)
     end
 end
 
--- 显示版本选择对话框（用于回退）
 -- 显示版本选择对话框（用于回退）
 local function show_version_choice(versions, current_version, plugin)
     local gettext = require("gettext")
@@ -477,49 +466,52 @@ function M.perform_update(download_url, plugin, target_version)
     end
     
     local version_text = target_version and (" (" .. target_version .. ")") or ""
-    UIManager:show(InfoMessage:new{
+    
+    UIManager:show(Notification:new{
         text = _("正在下载更新") .. version_text .. "...",
         timeout = 1
     })
     
-    UIManager:scheduleIn(0.5, function()
-        local zip_path, err = M.download_update(download_url)
-        
-        if not zip_path then
+    local zip_path, err = M.download_update(download_url)
+    
+    if not zip_path then
+        UIManager:show(Notification:new{
+            text = err or _("下载失败，请稍后重试"),
+            timeout = 3
+        })
+        return
+    end
+    
+    UIManager:show(Notification:new{
+        text = _("正在安装更新") .. version_text .. "...",
+        timeout = 1
+    })
+    
+    local success = M.install_update(zip_path)
+    
+    if success then
+        UIManager:show(ConfirmBox:new{
+            text = _("更新安装完成，需要重启 KOReader 才能生效。是否立即重启？"),
+            ok_text = _("重启"),
+            cancel_text = _("稍后"),
+            ok_callback = function()
+                UIManager:restartKOReader()
+            end
+        })
+    else
+        if is_android then
+            local data_dir = get_data_dir()
             UIManager:show(Notification:new{
-                text = err or _("下载失败，请稍后重试"),
+                text = string.format(_("自动安装失败，请手动解压 %splugins/cloudlibrary.koplugin.zip 到 plugins 目录后重启"), data_dir),
+                timeout = 5
+            })
+        else
+            UIManager:show(Notification:new{
+                text = _("安装失败，请手动更新"),
                 timeout = 3
             })
-            return
         end
-        
-        UIManager:show(InfoMessage:new{
-            text = _("正在安装更新") .. version_text .. "...",
-            timeout = 1
-        })
-        
-        UIManager:scheduleIn(0.5, function()
-            local success = M.install_update(zip_path)
-            
-            if success then
-                if not is_android then
-                    UIManager:show(ConfirmBox:new{
-                        text = _("更新安装完成，需要重启 KOReader 才能生效。是否立即重启？"),
-                        ok_text = _("重启"),
-                        cancel_text = _("稍后"),
-                        ok_callback = function()
-                            UIManager:restartKOReader()
-                        end
-                    })
-                end
-            else
-                UIManager:show(Notification:new{
-                    text = _("安装失败，请手动更新"),
-                    timeout = 3
-                })
-            end
-        end)
-    end)
+    end
 end
 
 return M
