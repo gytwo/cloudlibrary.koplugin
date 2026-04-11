@@ -15,7 +15,7 @@ local M = {}
 
 -- Gitee 仓库信息
 local REPO_OWNER = "gytwo"
-local REPO_NAME = "cloudlibrary"
+local REPO_NAME = "cloudlibrary.koplugin"
 
 local Device = require("device")
 local is_android = Device:isAndroid()
