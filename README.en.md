@@ -89,7 +89,6 @@ cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 versi
 10. Added online update feature (v1.0)
 11. Changed overwrite update from complete overwrite to optional overwrite, allowing choice to keep local document settings (v1.0)
 
-ps: The online update feature has been tested and causes crashes on Android devices. However, the new file will still be automatically downloaded to the `koreader\plugins` path. You just need to find the plugin archive under that path, extract it to overwrite the old plugin files, and then restart KOReader.
 
 #### Contributing
 
