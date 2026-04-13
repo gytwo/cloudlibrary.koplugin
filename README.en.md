@@ -18,6 +18,7 @@ After downloading and extracting, directly place the `cloudlibrary.koplugin` fol
 【Prerequisites】
 1. In the file browser interface, select 「Menu」 → 「Tools」 → 「Cloud Storage」 to add a cloud storage account.
 2. Plugin operation: 「Menu」 → 「Tools」 → 「Cloud Library」 → 「Settings」 → Select a cloud directory to store book metadata files, book files, and sync record files.
+   - The cloud directory for books defaults to the metadata cloud directory, and an independent cloud directory can also be optionally selected.
    - Different devices must use the **same cloud directory**, otherwise they cannot share.
 3. The local metadata storage location should be consistent across different devices (「Settings」 → 「Document」 → 「Book Metadata Folder」). The default is usually consistent, but if one device changes this setting, other devices should change accordingly; otherwise, an error may occur indicating that the local metadata file cannot be found.
 
@@ -90,6 +91,7 @@ cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 versi
 11. Changed overwrite update from complete overwrite to optional overwrite, allowing choice to keep local document settings (v1.0)
 12. Fixed online update crash issue on Android (v1.1)
 13. Fixed the issue where synchronization failed when opening a book for the first time (v1.2)
+14. Added support for setting an independent cloud directory for books (separate from metadata cloud directory) (v1.2)
 
 
 #### Contributing
