@@ -97,15 +97,16 @@ function M.ensure_sdr_directory(book_file)
     end
     
     logger.info("CloudLibrary: sdr 目录不存在，开始创建...")
-    pcall(function()
-        os.execute("mkdir -p " .. sdr_dir)
-    end)
+    
+    -- 对路径进行 shell 转义，处理括号和空格等特殊字符
+    local escaped_dir = sdr_dir:gsub("([() ])", "\\%1")
+    os.execute("mkdir -p " .. escaped_dir)
     
     if lfs.attributes(sdr_dir, "mode") == "directory" then
         logger.info("CloudLibrary: sdr 目录创建成功: " .. sdr_dir)
         return sdr_dir
     else
-        logger.error("CloudLibrary: sdr 目录创建失败: " .. sdr_dir)
+        logger.info("CloudLibrary: sdr 目录创建失败: " .. sdr_dir)
         return nil
     end
 end
