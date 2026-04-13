@@ -72,9 +72,85 @@ function M.ensure_download_dir()
         os.execute("mkdir -p " .. DOWNLOAD_DIR)
     end)
     if not success or not lfs.attributes(DOWNLOAD_DIR, "mode") then
-        logger.err("CloudLibrary: 无法创建下载目录")
+        logger.info("CloudLibrary: 无法创建下载目录")
         return false
     end
+    return true
+end
+
+-- 确保 sdr 目录存在
+function M.ensure_sdr_directory(book_file)
+    local DocSettings = require("docsettings")
+    
+    logger.info("CloudLibrary: ensure_sdr_directory 开始, book_file = " .. tostring(book_file))
+    
+    local sdr_dir = DocSettings:getSidecarDir(book_file)
+    if not sdr_dir then
+        logger.warn("CloudLibrary: DocSettings:getSidecarDir 返回 nil")
+        return nil
+    end
+    logger.info("CloudLibrary: sdr_dir = " .. sdr_dir)
+    
+    if lfs.attributes(sdr_dir, "mode") == "directory" then
+        logger.info("CloudLibrary: sdr 目录已存在")
+        return sdr_dir
+    end
+    
+    logger.info("CloudLibrary: sdr 目录不存在，开始创建...")
+    pcall(function()
+        os.execute("mkdir -p " .. sdr_dir)
+    end)
+    
+    if lfs.attributes(sdr_dir, "mode") == "directory" then
+        logger.info("CloudLibrary: sdr 目录创建成功: " .. sdr_dir)
+        return sdr_dir
+    else
+        logger.error("CloudLibrary: sdr 目录创建失败: " .. sdr_dir)
+        return nil
+    end
+end
+
+-- 确保本地元数据文件存在（只创建目录，不创建空文件）
+function M.ensure_local_metadata(book)
+    logger.info("CloudLibrary: ===== ensure_local_metadata 开始 =====")
+    logger.info("CloudLibrary: book.file = " .. tostring(book.file))
+    logger.info("CloudLibrary: book.metadata = " .. tostring(book.metadata))
+    logger.info("CloudLibrary: book.title = " .. tostring(book.title))
+    
+    local metadata_exists = book.metadata and lfs.attributes(book.metadata, "mode") == "file"
+    logger.info("CloudLibrary: metadata_exists = " .. tostring(metadata_exists))
+    
+    if metadata_exists then
+        logger.info("CloudLibrary: 元数据文件已存在，无需创建")
+        return true
+    end
+    
+    -- 创建 sdr 目录
+    logger.info("CloudLibrary: 开始创建 sdr 目录...")
+    local sdr_dir = M.ensure_sdr_directory(book.file)
+    if not sdr_dir then
+        logger.warn("CloudLibrary: ensure_sdr_directory 返回 nil")
+        return false
+    end
+    logger.info("CloudLibrary: sdr_dir = " .. tostring(sdr_dir))
+    
+    -- 设置 metadata 路径：metadata.扩展名.lua
+    local ext = book.file:match("%.([^%.]+)$") or "epub"
+    book.metadata = sdr_dir .. "/metadata." .. ext .. ".lua"
+    logger.info("CloudLibrary: 设置 book.metadata = " .. book.metadata)
+    
+    -- 不创建空文件，让后续的 save_metadata_native 创建
+    return true
+end
+
+-- 使用 KOReader 原生方式保存元数据
+function M.save_metadata_native(metadata, book_file)
+    local DocSettings = require("docsettings")
+    
+    local doc_settings = DocSettings:open(book_file)
+    doc_settings.data = metadata
+    doc_settings:flush()
+    logger.info("CloudLibrary: 使用原生方式保存元数据，书籍文件: " .. book_file)
     return true
 end
 
@@ -340,16 +416,35 @@ function M.upload_book(book, naming_mode)
     return false, ERROR_TYPES.UNKNOWN_ERROR
 end
 
+-- ========== download_book 函数（手动同步-覆盖模式） ==========
 function M.download_book(book, naming_mode)
-    local ffiutil = require("ffi/util")
-    local Merger = require("merge")
+    logger.info("CloudLibrary: ========== download_book 开始 ==========")
+    logger.info("CloudLibrary: book.file = " .. tostring(book.file))
+    logger.info("CloudLibrary: book.metadata = " .. tostring(book.metadata))
     
+    local Merger = require("merge")
     local ReaderUI = require("apps/reader/readerui")
     local current_ui = ReaderUI.instance
     local is_currently_open = (current_ui and current_ui.document and current_ui.document.file == book.file)
     
-    if not book.metadata or not lfs.attributes(book.metadata, "mode") then
+    -- 直接调用 ensure_local_metadata，它会处理目录创建和 metadata 路径设置
+    if not M.ensure_local_metadata(book) then
+        logger.error("CloudLibrary: ensure_local_metadata 失败")
         return false, ERROR_TYPES.LOCAL_METADATA_NOT_EXISTS
+    end
+    logger.info("CloudLibrary: ensure_local_metadata 成功, book.metadata = " .. book.metadata)
+    
+    -- 如果当前打开，先关闭
+    if is_currently_open then
+        logger.info("CloudLibrary: 关闭当前书籍: " .. book.file)
+        local plugin = get_plugin()
+        if plugin and plugin.auto_sync then
+            plugin.auto_sync:setSkipUpload(true)
+        end
+        G_reader_settings:saveSetting("cloudlibrary_skip_auto_download", true)
+        current_ui:saveSettings()
+        current_ui.tearing_down = true
+        current_ui:onClose()
     end
     
     local server = M.get_server()
@@ -372,6 +467,7 @@ function M.download_book(book, naming_mode)
     end
     
     local cloud_filename = M.get_cloud_filename(book, naming_mode)
+    logger.info("CloudLibrary: download_book - cloud_filename = " .. cloud_filename)
     
     local cloud_path
     if server.type == "dropbox" then
@@ -381,6 +477,7 @@ function M.download_book(book, naming_mode)
         cloud_path = api:getJoinedPath(server.address, server.url)
         cloud_path = api:getJoinedPath(cloud_path, cloud_filename)
     end
+    logger.info("CloudLibrary: download_book - cloud_path = " .. tostring(cloud_path))
     
     local downloaded_file = DOWNLOAD_DIR .. cloud_filename
     local code
@@ -394,6 +491,8 @@ function M.download_book(book, naming_mode)
     else
         code = api:downloadFile(cloud_path, server.username, server.password, downloaded_file)
     end
+    
+    logger.info("CloudLibrary: download_book - download code = " .. tostring(code))
     
     if type(code) ~= "number" or code ~= 200 then
         if lfs.attributes(downloaded_file, "mode") then
@@ -411,61 +510,32 @@ function M.download_book(book, naming_mode)
     if not lfs.attributes(downloaded_file, "mode") then
         return false, ERROR_TYPES.UNKNOWN_ERROR
     end
+    logger.info("CloudLibrary: download_book - 下载成功")
     
-    if is_currently_open then
-        logger.info("CloudLibrary: 下载成功，关闭书籍准备替换元数据: " .. book.file)
-        local plugin = get_plugin()
-        if plugin and plugin.auto_sync then
-            plugin.auto_sync:setSkipUpload(true)
-        end
-        G_reader_settings:saveSetting("cloudlibrary_skip_auto_download", true)
-        current_ui:saveSettings()
-        current_ui.tearing_down = true
-        current_ui:onClose()
-    end
-    
-    -- ========== 修改开始 ==========
     -- 获取设置，判断是否保留本地文档设置
     local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
     local keep_local_settings = settings.override_keep_local_settings == true
     
     local merged_data
     if keep_local_settings then
-        -- 使用覆盖合并（保留本地文档设置）
         logger.info("CloudLibrary: 覆盖更新模式 - 保留本地文档设置")
         merged_data = Merger.override_merge(book.metadata, downloaded_file)
     else
-        -- 使用传统覆盖（完全使用云端文件）
         logger.info("CloudLibrary: 覆盖更新模式 - 完全使用云端文件")
         merged_data = Merger.load_metadata(downloaded_file)
     end
     os.remove(downloaded_file)
     
     if not merged_data then
-        logger.err("CloudLibrary: 获取合并数据失败")
+        logger.error("CloudLibrary: 获取合并数据失败")
         return false, "merge_failed"
     end
     
-    -- 保存合并后的数据
-    local tmp_merged = DOWNLOAD_DIR .. "merged_" .. cloud_filename
-    local save_success = Merger.save_metadata(tmp_merged, merged_data, book.metadata)
+    -- 使用原生方式保存
+    M.save_metadata_native(merged_data, book.file)
+    logger.info("CloudLibrary: 覆盖后的元数据已保存")
     
-    if save_success then
-        pcall(ffiutil.copyFile, tmp_merged, book.metadata)
-        logger.info("CloudLibrary: 合并后的元数据已保存: " .. book.metadata)
-    else
-        logger.err("CloudLibrary: 保存合并后的元数据失败")
-        if lfs.attributes(tmp_merged, "mode") then
-            os.remove(tmp_merged)
-        end
-        return false, "save_merged_failed"
-    end
-    
-    if lfs.attributes(tmp_merged, "mode") then
-        os.remove(tmp_merged)
-    end
-    -- ========== 修改结束 ==========
-    
+    -- 如果之前是打开的，重新打开
     if is_currently_open then
         logger.info("CloudLibrary: 重新打开书籍: " .. book.file)
         local plugin = get_plugin()
@@ -478,19 +548,40 @@ function M.download_book(book, naming_mode)
         ReaderUI:showReader(book.file)
     end
     
+    logger.info("CloudLibrary: ========== download_book 结束 ==========")
     return true
 end
 
+-- ========== download_book_merge 函数（手动同步-合并模式） ==========
 function M.download_book_merge(book, naming_mode)
-    local ffiutil = require("ffi/util")
-    local Merger = require("merge")
+    logger.info("CloudLibrary: ========== download_book_merge 开始 ==========")
+    logger.info("CloudLibrary: book.file = " .. tostring(book.file))
+    logger.info("CloudLibrary: book.metadata = " .. tostring(book.metadata))
+    logger.info("CloudLibrary: book.title = " .. tostring(book.title))
     
+    local Merger = require("merge")
     local ReaderUI = require("apps/reader/readerui")
     local current_ui = ReaderUI.instance
     local is_currently_open = (current_ui and current_ui.document and current_ui.document.file == book.file)
     
-    if not book.metadata or not lfs.attributes(book.metadata, "mode") then
+    -- 直接调用 ensure_local_metadata，它会处理目录创建和 metadata 路径设置
+    if not M.ensure_local_metadata(book) then
+        logger.error("CloudLibrary: ensure_local_metadata 失败")
         return false, ERROR_TYPES.LOCAL_METADATA_NOT_EXISTS
+    end
+    logger.info("CloudLibrary: ensure_local_metadata 成功, book.metadata = " .. book.metadata)
+    
+    -- 如果当前打开，先关闭
+    if is_currently_open then
+        logger.info("CloudLibrary: 关闭当前书籍: " .. book.file)
+        local plugin = get_plugin()
+        if plugin and plugin.auto_sync then
+            plugin.auto_sync:setSkipUpload(true)
+        end
+        G_reader_settings:saveSetting("cloudlibrary_skip_auto_download", true)
+        current_ui:saveSettings()
+        current_ui.tearing_down = true
+        current_ui:onClose()
     end
     
     local server = M.get_server()
@@ -513,6 +604,7 @@ function M.download_book_merge(book, naming_mode)
     end
     
     local cloud_filename = M.get_cloud_filename(book, naming_mode)
+    logger.info("CloudLibrary: download_book_merge - cloud_filename = " .. cloud_filename)
     
     local cloud_path
     if server.type == "dropbox" then
@@ -522,6 +614,7 @@ function M.download_book_merge(book, naming_mode)
         cloud_path = api:getJoinedPath(server.address, server.url)
         cloud_path = api:getJoinedPath(cloud_path, cloud_filename)
     end
+    logger.info("CloudLibrary: download_book_merge - cloud_path = " .. tostring(cloud_path))
     
     local downloaded_file = DOWNLOAD_DIR .. cloud_filename
     local code
@@ -535,6 +628,8 @@ function M.download_book_merge(book, naming_mode)
     else
         code = api:downloadFile(cloud_path, server.username, server.password, downloaded_file)
     end
+    
+    logger.info("CloudLibrary: download_book_merge - download code = " .. tostring(code))
     
     if type(code) ~= "number" or code ~= 200 then
         if lfs.attributes(downloaded_file, "mode") then
@@ -552,53 +647,22 @@ function M.download_book_merge(book, naming_mode)
     if not lfs.attributes(downloaded_file, "mode") then
         return false, ERROR_TYPES.UNKNOWN_ERROR
     end
+    logger.info("CloudLibrary: download_book_merge - 下载成功")
     
-    if is_currently_open then
-        logger.info("CloudLibrary: 保存当前书籍状态: " .. book.file)
-        current_ui:saveSettings()
-        UIManager:broadcastEvent(Event:new("FlushSettings"))
-    end
-    
-    logger.info("CloudLibrary: 开始合并元数据: " .. book.file)
+    logger.info("CloudLibrary: 开始合并元数据")
     local merged_data = Merger.merge(book.metadata, downloaded_file)
+    os.remove(downloaded_file)
     
     if not merged_data then
-        logger.err("CloudLibrary: 合并元数据失败")
-        os.remove(downloaded_file)
+        logger.error("CloudLibrary: 合并元数据失败")
         return false, "merge_failed"
     end
     
-    if is_currently_open then
-        logger.info("CloudLibrary: 合并成功，关闭书籍准备保存元数据: " .. book.file)
-        local plugin = get_plugin()
-        if plugin and plugin.auto_sync then
-            plugin.auto_sync:setSkipUpload(true)
-        end
-        G_reader_settings:saveSetting("cloudlibrary_skip_auto_download", true)
-        current_ui.tearing_down = true
-        current_ui:onClose()
-    end
+    -- 使用原生方式保存
+    M.save_metadata_native(merged_data, book.file)
+    logger.info("CloudLibrary: 合并后的元数据已保存")
     
-    local tmp_merged = DOWNLOAD_DIR .. "merged_" .. cloud_filename
-    local save_success = Merger.save_metadata(tmp_merged, merged_data, book.metadata)
-    
-    if save_success then
-        pcall(ffiutil.copyFile, tmp_merged, book.metadata)
-        logger.info("CloudLibrary: 合并后的元数据已保存: " .. book.metadata)
-    else
-        logger.err("CloudLibrary: 保存合并后的元数据失败")
-        os.remove(downloaded_file)
-        if lfs.attributes(tmp_merged, "mode") then
-            os.remove(tmp_merged)
-        end
-        return false, "save_merged_failed"
-    end
-    
-    os.remove(downloaded_file)
-    if lfs.attributes(tmp_merged, "mode") then
-        os.remove(tmp_merged)
-    end
-    
+    -- 如果之前是打开的，重新打开
     if is_currently_open then
         logger.info("CloudLibrary: 重新打开书籍: " .. book.file)
         local plugin = get_plugin()
@@ -611,16 +675,23 @@ function M.download_book_merge(book, naming_mode)
         ReaderUI:showReader(book.file)
     end
     
+    logger.info("CloudLibrary: ========== download_book_merge 结束 ==========")
     return true
 end
 
+-- ========== download_book_before_open 函数（自动下载-覆盖模式） ==========
 function M.download_book_before_open(book, naming_mode)
-    local ffiutil = require("ffi/util")
+    logger.info("CloudLibrary: ========== download_book_before_open 开始 ==========")
+    logger.info("CloudLibrary: book.file = " .. tostring(book.file))
+    logger.info("CloudLibrary: book.metadata = " .. tostring(book.metadata))
+    
     local Merger = require("merge")
     
-    if not book.metadata or not lfs.attributes(book.metadata, "mode") then
+    if not M.ensure_local_metadata(book) then
+        logger.error("CloudLibrary: ensure_local_metadata 失败")
         return false, ERROR_TYPES.LOCAL_METADATA_NOT_EXISTS
     end
+    logger.info("CloudLibrary: ensure_local_metadata 成功, book.metadata = " .. book.metadata)
     
     local server = M.get_server()
     if not server then
@@ -642,6 +713,7 @@ function M.download_book_before_open(book, naming_mode)
     end
     
     local cloud_filename = M.get_cloud_filename(book, naming_mode)
+    logger.info("CloudLibrary: download_book_before_open - cloud_filename = " .. cloud_filename)
     
     local cloud_path
     if server.type == "dropbox" then
@@ -651,6 +723,7 @@ function M.download_book_before_open(book, naming_mode)
         cloud_path = api:getJoinedPath(server.address, server.url)
         cloud_path = api:getJoinedPath(cloud_path, cloud_filename)
     end
+    logger.info("CloudLibrary: download_book_before_open - cloud_path = " .. tostring(cloud_path))
     
     local downloaded_file = DOWNLOAD_DIR .. cloud_filename
     local code
@@ -665,51 +738,63 @@ function M.download_book_before_open(book, naming_mode)
         code = api:downloadFile(cloud_path, server.username, server.password, downloaded_file)
     end
     
+    logger.info("CloudLibrary: download_book_before_open - download code = " .. tostring(code))
+    
     if type(code) == "number" and code == 200 then
         if lfs.attributes(downloaded_file, "mode") then
-            -- ========== 修改开始 ==========
+            logger.info("CloudLibrary: download_book_before_open - 下载成功")
+            
+            -- 获取设置，判断是否保留本地文档设置
             local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
             local keep_local_settings = settings.override_keep_local_settings == true
             
+            local merged_data
             if keep_local_settings then
-                -- 使用覆盖合并（保留本地文档设置）
                 logger.info("CloudLibrary: 自动下载覆盖模式 - 保留本地文档设置")
-                local merged_data = Merger.override_merge(book.metadata, downloaded_file)
-                if merged_data then
-                    local tmp_merged = downloaded_file .. ".override"
-                    Merger.save_metadata(tmp_merged, merged_data, book.metadata)
-                    ffiutil.copyFile(tmp_merged, book.metadata)
-                    os.remove(tmp_merged)
-                end
+                merged_data = Merger.override_merge(book.metadata, downloaded_file)
             else
-                -- 传统覆盖
                 logger.info("CloudLibrary: 自动下载覆盖模式 - 完全使用云端文件")
-                ffiutil.copyFile(downloaded_file, book.metadata)
+                merged_data = Merger.load_metadata(downloaded_file)
             end
             os.remove(downloaded_file)
-            -- ========== 修改结束 ==========
+            
+            if merged_data then
+                M.save_metadata_native(merged_data, book.file)
+                logger.info("CloudLibrary: 覆盖后的元数据已保存")
+            end
+            
+            logger.info("CloudLibrary: ========== download_book_before_open 成功 ==========")
             return true
         end
     end
     
     if type(code) == "number" and code == 404 then
+        logger.warn("CloudLibrary: download_book_before_open - 云端文件不存在")
         return false, ERROR_TYPES.CLOUD_FILE_NOT_FOUND
     end
     
     if type(code) == "number" and code == 401 then
+        logger.warn("CloudLibrary: download_book_before_open - 认证失败")
         return false, ERROR_TYPES.AUTH_FAILED
     end
     
+    logger.error("CloudLibrary: download_book_before_open - 下载失败, code = " .. tostring(code))
     return false, ERROR_TYPES.UNKNOWN_ERROR
 end
 
+-- ========== download_book_merge_before_open 函数（自动下载-合并模式） ==========
 function M.download_book_merge_before_open(book, naming_mode)
-    local ffiutil = require("ffi/util")
+    logger.info("CloudLibrary: ========== download_book_merge_before_open 开始 ==========")
+    logger.info("CloudLibrary: book.file = " .. tostring(book.file))
+    logger.info("CloudLibrary: book.metadata = " .. tostring(book.metadata))
+    
     local Merger = require("merge")
     
-    if not book.metadata or not lfs.attributes(book.metadata, "mode") then
+    if not M.ensure_local_metadata(book) then
+        logger.error("CloudLibrary: ensure_local_metadata 失败")
         return false, ERROR_TYPES.LOCAL_METADATA_NOT_EXISTS
     end
+    logger.info("CloudLibrary: ensure_local_metadata 成功, book.metadata = " .. book.metadata)
     
     local server = M.get_server()
     if not server then
@@ -731,6 +816,7 @@ function M.download_book_merge_before_open(book, naming_mode)
     end
     
     local cloud_filename = M.get_cloud_filename(book, naming_mode)
+    logger.info("CloudLibrary: download_book_merge_before_open - cloud_filename = " .. cloud_filename)
     
     local cloud_path
     if server.type == "dropbox" then
@@ -740,6 +826,7 @@ function M.download_book_merge_before_open(book, naming_mode)
         cloud_path = api:getJoinedPath(server.address, server.url)
         cloud_path = api:getJoinedPath(cloud_path, cloud_filename)
     end
+    logger.info("CloudLibrary: download_book_merge_before_open - cloud_path = " .. tostring(cloud_path))
     
     local downloaded_file = DOWNLOAD_DIR .. cloud_filename
     local code
@@ -754,30 +841,38 @@ function M.download_book_merge_before_open(book, naming_mode)
         code = api:downloadFile(cloud_path, server.username, server.password, downloaded_file)
     end
     
+    logger.info("CloudLibrary: download_book_merge_before_open - download code = " .. tostring(code))
+    
     if type(code) == "number" and code == 200 then
         if lfs.attributes(downloaded_file, "mode") then
+            logger.info("CloudLibrary: download_book_merge_before_open - 下载成功，开始合并")
             local merged_data = Merger.merge(book.metadata, downloaded_file)
+            os.remove(downloaded_file)
             
             if merged_data then
-                local tmp_merged = downloaded_file .. ".merged"
-                Merger.save_metadata(tmp_merged, merged_data, book.metadata)
-                ffiutil.copyFile(tmp_merged, book.metadata)
-                os.remove(tmp_merged)
+                M.save_metadata_native(merged_data, book.file)
+                logger.info("CloudLibrary: 合并后的元数据已保存")
+            else
+                logger.warn("CloudLibrary: 合并失败")
+                return false, "merge_failed"
             end
             
-            os.remove(downloaded_file)
+            logger.info("CloudLibrary: ========== download_book_merge_before_open 成功 ==========")
             return true
         end
     end
     
     if type(code) == "number" and code == 404 then
+        logger.warn("CloudLibrary: download_book_merge_before_open - 云端文件不存在")
         return false, ERROR_TYPES.CLOUD_FILE_NOT_FOUND
     end
     
     if type(code) == "number" and code == 401 then
+        logger.warn("CloudLibrary: download_book_merge_before_open - 认证失败")
         return false, ERROR_TYPES.AUTH_FAILED
     end
     
+    logger.error("CloudLibrary: download_book_merge_before_open - 下载失败, code = " .. tostring(code))
     return false, ERROR_TYPES.UNKNOWN_ERROR
 end
 
