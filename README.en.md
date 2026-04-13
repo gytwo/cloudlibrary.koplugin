@@ -89,6 +89,7 @@ cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 versi
 10. Added online update feature (v1.0)
 11. Changed overwrite update from complete overwrite to optional overwrite, allowing choice to keep local document settings (v1.0)
 12. Fixed online update crash issue on Android (v1.1)
+13. Fixed the issue where synchronization failed when opening a book for the first time (v1.2)
 
 
 #### Contributing
