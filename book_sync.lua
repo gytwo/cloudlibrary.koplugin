@@ -843,25 +843,6 @@ function M.show_cloud_book_dialog(callback, plugin)
                 end
             },
             {
-                text = string.format(_("下载 (%d)"), selected_count),
-                callback = function()
-                    local selected_names = {}
-                    for _, book in ipairs(original_books) do
-                        if selected[book.name] then
-                            table.insert(selected_names, book.name)
-                        end
-                    end
-                    if dialog then
-                        UIManager:close(dialog)
-                    end
-                    if #selected_names > 0 then
-                        callback(selected_names)
-                    else
-                        show_notification(_("未选中任何书籍"), 2)
-                    end
-                end
-            },
-            {
                 text = string.format(_("删除 (%d)"), selected_count),
                 callback = function()
                     local selected_names = {}
@@ -883,6 +864,25 @@ function M.show_cloud_book_dialog(callback, plugin)
                                 M.batch_delete_books(selected_names, settings)
                             end
                         })
+                    else
+                        show_notification(_("未选中任何书籍"), 2)
+                    end
+                end
+            },
+            {
+                text = string.format(_("下载 (%d)"), selected_count),
+                callback = function()
+                    local selected_names = {}
+                    for _, book in ipairs(original_books) do
+                        if selected[book.name] then
+                            table.insert(selected_names, book.name)
+                        end
+                    end
+                    if dialog then
+                        UIManager:close(dialog)
+                    end
+                    if #selected_names > 0 then
+                        callback(selected_names)
                     else
                         show_notification(_("未选中任何书籍"), 2)
                     end
