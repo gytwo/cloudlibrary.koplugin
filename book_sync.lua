@@ -21,7 +21,37 @@ local BOOK_EXTENSIONS = {
     ".cbz", ".cbr", ".fb2", ".djvu", ".docx", ".txt"
 }
 
-local function get_server()
+-- 获取书籍云端配置（独立于元数据配置）
+local function get_book_server()
+    local json = require("json")
+    local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
+    local book_cloud_dir = settings.book_cloud_dir
+    
+    if book_cloud_dir and book_cloud_dir ~= "" then
+        -- 有独立的书籍云端配置
+        local server = {
+            type = settings.book_cloud_type or "webdav",
+            url = book_cloud_dir,
+            address = settings.book_cloud_address,
+            username = settings.book_cloud_username,
+            password = settings.book_cloud_password,
+        }
+        -- 如果缺少必要信息，回退到元数据配置
+        if server.type == "webdav" and (not server.address or not server.username or not server.password) then
+            return M.get_metadata_server()
+        end
+        if server.type == "dropbox" and not server.password then
+            return M.get_metadata_server()
+        end
+        return server
+    end
+    
+    -- 没有独立配置，使用元数据配置
+    return M.get_metadata_server()
+end
+
+-- 获取元数据云端配置
+function M.get_metadata_server()
     local json = require("json")
     local server_json = G_reader_settings:readSetting("cloud_server_object")
     if not server_json then
@@ -62,13 +92,11 @@ local function get_cloud_path(server, cloud_filename)
         return nil
     end
     
-    local base_dir = server.book_url or server.url
-    
     if server.type == "dropbox" then
-        local url_base = base_dir:sub(-1) == "/" and base_dir or base_dir .. "/"
+        local url_base = server.url:sub(-1) == "/" and server.url or server.url .. "/"
         return url_base .. cloud_filename
     else
-        local path = api:getJoinedPath(server.address, base_dir)
+        local path = api:getJoinedPath(server.address, server.url)
         return api:getJoinedPath(path, cloud_filename)
     end
 end
@@ -98,7 +126,7 @@ end
 
 function M.check_cloud_file_exists(cloud_filename)
     logger.info("BookSync: check_cloud_file_exists, cloud_filename=" .. tostring(cloud_filename))
-    local server = get_server()
+    local server = get_book_server()
     if not server then
         logger.warn("BookSync: check_cloud_file_exists, server is nil")
         return false
@@ -246,7 +274,7 @@ function M.upload_book(book_path, show_msg, naming_mode, book_info)
         return false, "unsupported_format"
     end
     
-    local server = get_server()
+    local server = get_book_server()
     if not server then
         logger.warn("BookSync: upload_book, server is nil")
         if show_msg then show_notification(_("未配置云存储服务"), 2) end
@@ -338,7 +366,7 @@ function M.download_book(cloud_filename, target_dir, show_msg)
         return false, "file_exists"
     end
     
-    local server = get_server()
+    local server = get_book_server()
     if not server then
         logger.warn("BookSync: download_book, server is nil")
         if show_msg then show_notification(_("未配置云存储服务"), 2) end
@@ -410,7 +438,7 @@ function M.delete_cloud_book(cloud_filename, show_msg)
     logger.info("BookSync: delete_cloud_book 被调用, cloud_filename=" .. tostring(cloud_filename))
     show_msg = (show_msg == nil) or show_msg
     
-    local server = get_server()
+    local server = get_book_server()
     if not server then
         logger.warn("BookSync: delete_cloud_book, server is nil")
         if show_msg then show_notification(_("未配置云存储服务"), 2) end
@@ -565,13 +593,13 @@ end
 
 function M.get_cloud_book_list()
     logger.info("BookSync: get_cloud_book_list 被调用")
-    local server = get_server()
+    local server = get_book_server()
     if not server then
         logger.warn("BookSync: get_cloud_book_list, server is nil")
         return nil, "未配置云存储服务"
     end
     
-    local book_dir = server.book_url or server.url
+    local book_dir = server.url
     if not book_dir or book_dir == "" then
         logger.warn("BookSync: get_cloud_book_list, 云端目录未设置")
         return nil, "云端目录未设置"
