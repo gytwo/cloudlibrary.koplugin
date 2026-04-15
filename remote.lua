@@ -247,6 +247,141 @@ function M.clean_for_json(data)
     return clean
 end
 
+-- ========== NoteMarkData 转换函数 ==========
+
+-- 生成随机字符串（8位小写字母+数字）
+local function generate_random_string(length)
+    length = length or 8
+    local chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    local result = ""
+    for i = 1, length do
+        local rand = math.random(1, #chars)
+        result = result .. chars:sub(rand, rand)
+    end
+    return result
+end
+
+-- 将 datetime 字符串转换为毫秒时间戳（UTC）
+local function datetime_to_timestamp(datetime_str)
+    if not datetime_str then
+        return nil
+    end
+    -- 解析 "2026-04-13 20:32:09" 格式
+    local year, month, day, hour, min, sec = datetime_str:match("(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)")
+    if not year then
+        return nil
+    end
+    local dt = os.time({
+        year = tonumber(year),
+        month = tonumber(month),
+        day = tonumber(day),
+        hour = tonumber(hour),
+        min = tonumber(min),
+        sec = tonumber(sec)
+    })
+    -- os.time 返回的是本地时间戳（北京时间 UTC+8），需要减8小时得到 UTC 时间戳
+    return (dt - 8 * 3600) * 1000
+end
+
+-- 将 datetime 字符串转换为 ISO 8601 UTC 格式
+local function datetime_to_iso(datetime_str)
+    if not datetime_str then
+        return nil
+    end
+    local timestamp_ms = datetime_to_timestamp(datetime_str)
+    if not timestamp_ms then
+        return nil
+    end
+    local seconds = math.floor(timestamp_ms / 1000)
+    local millis = timestamp_ms % 1000
+    local utc_time = os.date("!%Y-%m-%dT%H:%M:%S", seconds)
+    return string.format("%s.%03dZ", utc_time, millis)
+end
+
+-- 生成 ID
+local function generate_id(annotation_type, datetime_str)
+    local timestamp_ms = datetime_to_timestamp(datetime_str) or (os.time() * 1000)
+    local random_str = generate_random_string(8)
+    return string.format("%s_%d_%s", annotation_type, timestamp_ms, random_str)
+end
+
+-- 将单个 annotation 转换为 notemark 格式
+local function convert_annotation_to_notemark(ann)
+    local text = ann.text or ""
+    local datetime_str = ann.datetime or ""
+    local datetime_updated = ann.datetime_updated or ann.datetime or ""
+    local note_content = ann.note or ""
+    local drawer = ann.drawer
+    
+    local notemark = {
+        order = 1,
+        total = 1,
+        timestamp = datetime_to_iso(datetime_str) or os.date("!%Y-%m-%dT%H:%M:%S.000Z")
+    }
+    
+    -- 优先判断：有 note 内容则按 note 规则处理
+    if note_content and note_content ~= "" then
+        notemark.id = generate_id("note", datetime_str)
+        notemark.type = "note"
+        notemark.text = text
+        notemark.note = note_content
+        notemark.noteType = "richtext"
+        notemark.updated = datetime_to_iso(datetime_updated) or notemark.timestamp
+        return notemark
+    end
+    
+    -- 没有 note，根据 drawer 类型转换
+    if drawer == "lighten" then
+        notemark.id = generate_id("highlight", datetime_str)
+        notemark.type = "highlight"
+        notemark.text = text
+    elseif drawer == "underscore" then
+        notemark.id = generate_id("htmltag", datetime_str)
+        notemark.type = "html-tag"
+        notemark.text = text
+        notemark.htmlTag = "u"
+    elseif drawer == "strikeout" then
+        notemark.id = generate_id("question", datetime_str)
+        notemark.type = "question"
+        notemark.text = text
+    elseif drawer == "invert" then
+        notemark.id = generate_id("bold", datetime_str)
+        notemark.type = "bold"
+        notemark.text = text
+    else
+        -- 未知类型，跳过
+        return nil
+    end
+    
+    return notemark
+end
+
+-- 将 annotations 转换为 NoteMarkData 格式
+function M.convert_annotations_to_notemarkdata(annotations)
+    if not annotations or type(annotations) ~= "table" or #annotations == 0 then
+        return nil
+    end
+    
+    local notemarks = {}
+    for _, ann in ipairs(annotations) do
+        local notemark = convert_annotation_to_notemark(ann)
+        if notemark then
+            table.insert(notemarks, notemark)
+        end
+    end
+    
+    if #notemarks == 0 then
+        return nil
+    end
+    
+    return {
+        NoteMarkData = {
+            notemarks = notemarks
+        }
+    }
+end
+
+-- 原有的 JSON 转换函数（保持原有格式）
 function M.convert_metadata_to_json(lua_path)
     if not lua_path or not lfs.attributes(lua_path, "mode") then
         logger.warn("CloudLibrary: 元数据文件不存在，无法生成JSON: " .. tostring(lua_path))
@@ -278,6 +413,87 @@ function M.convert_metadata_to_json(lua_path)
     f:close()
     
     return json_tmp_path
+end
+
+-- 新的 JSON 转换函数（支持 NoteMarkData 格式）
+-- 新的 JSON 转换函数（支持 NoteMarkData 格式）
+function M.convert_metadata_to_json_with_notemark(lua_path)
+    if not lua_path or not lfs.attributes(lua_path, "mode") then
+        logger.warn("CloudLibrary: 元数据文件不存在，无法生成JSON: " .. tostring(lua_path))
+        return nil
+    end
+    
+    local merge = require("merge")
+    local metadata = merge.load_metadata(lua_path)
+    if not metadata then
+        logger.warn("CloudLibrary: 无法加载元数据，无法生成JSON: " .. lua_path)
+        return nil
+    end
+    
+    -- 提取 annotations 并转换
+    local annotations = metadata.annotations
+    local notemark_data = M.convert_annotations_to_notemarkdata(annotations)
+    
+    if not notemark_data then
+        logger.info("CloudLibrary: 没有标注需要转换")
+        return nil
+    end
+    
+    -- 只输出 NoteMarkData，不包含其他元数据
+    local output_data = notemark_data
+    
+    local ok, json_str = pcall(json.encode, output_data)
+    if not ok or not json_str then
+        logger.warn("CloudLibrary: JSON编码失败: " .. tostring(ok))
+        return nil
+    end
+    
+    local json_tmp_path = lua_path .. ".json.tmp"
+    local f = io.open(json_tmp_path, "w")
+    if not f then
+        logger.warn("CloudLibrary: 无法创建JSON临时文件: " .. json_tmp_path)
+        return nil
+    end
+    f:write(json_str)
+    f:close()
+    
+    return json_tmp_path
+end
+
+-- 修改后的 upload_dual_format 函数，根据设置选择格式
+function M.upload_dual_format(server, lua_path, lua_filename, book)
+    local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
+    local use_notemark = settings.use_notemark_format == true
+    
+    local json_tmp_path
+    if use_notemark then
+        json_tmp_path = M.convert_metadata_to_json_with_notemark(lua_path)
+    else
+        json_tmp_path = M.convert_metadata_to_json(lua_path)
+    end
+    
+    if not json_tmp_path then
+        logger.warn("CloudLibrary: 生成JSON失败，仅上传LUA文件")
+        return
+    end
+    
+    local json_success = M.upload_json_to_cloud(server, json_tmp_path, lua_filename)
+    
+    if json_success and book and book.title then
+        local log_path = DataStorage:getDataDir() .. "同步记录.txt"
+        local f = io.open(log_path, "a")
+        if f then
+            local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+            if use_notemark then
+                f:write(string.format("[%s] JSON格式已上传（含NoteMarkData）: %s\n", timestamp, book.title))
+            else
+                f:write(string.format("[%s] JSON格式已上传: %s\n", timestamp, book.title))
+            end
+            f:close()
+        end
+    end
+    
+    os.remove(json_tmp_path)
 end
 
 function M.upload_json_to_cloud(server, json_path, lua_filename)
@@ -321,28 +537,6 @@ function M.upload_json_to_cloud(server, json_path, lua_filename)
         logger.warn("CloudLibrary: JSON文件上传失败, HTTP状态码: " .. tostring(code))
         return false
     end
-end
-
-function M.upload_dual_format(server, lua_path, lua_filename, book)
-    local json_tmp_path = M.convert_metadata_to_json(lua_path)
-    if not json_tmp_path then
-        logger.warn("CloudLibrary: 生成JSON失败，仅上传LUA文件")
-        return
-    end
-    
-    local json_success = M.upload_json_to_cloud(server, json_tmp_path, lua_filename)
-    
-    if json_success and book and book.title then
-        local log_path = DataStorage:getDataDir() .. "同步记录.txt"
-        local f = io.open(log_path, "a")
-        if f then
-            local timestamp = os.date("%Y-%m-%d %H:%M:%S")
-            f:write(string.format("[%s] JSON格式已上传: %s\n", timestamp, book.title))
-            f:close()
-        end
-    end
-    
-    os.remove(json_tmp_path)
 end
 
 function M.upload_book(book, naming_mode)
