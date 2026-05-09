@@ -61,7 +61,7 @@ local function download_cloud_log()
         return nil
     end
     
-    local temp_file = DataStorage:getDataDir() .. "cloud_log.tmp"
+    local temp_file = DataStorage:getDataDir() .. "/cloud_log.tmp"
     local code
     
     if server.type == "dropbox" then
@@ -110,7 +110,7 @@ local function upload_cloud_log(content)
         return false
     end
     
-    local temp_file = DataStorage:getDataDir() .. "cloud_log.tmp"
+    local temp_file = DataStorage:getDataDir() .. "/cloud_log.tmp"
     local f = io.open(temp_file, "w")
     if not f then
         return false
@@ -305,7 +305,7 @@ function M.clear_cloud_log()
         return false, "无法获取云端路径"
     end
     
-    local temp_file = DataStorage:getDataDir() .. "cloud_log_empty.tmp"
+    local temp_file = DataStorage:getDataDir() .. "/cloud_log_empty.tmp"
     local f = io.open(temp_file, "w")
     if not f then
         return false, "无法创建临时文件"
