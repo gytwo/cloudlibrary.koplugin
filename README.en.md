@@ -77,6 +77,12 @@ When enabled, an additional JSON file converted from the original metadata file 
 - Combined with the Metadata Download Mode setting, you can achieve one-gesture download / batch download (smart mode).
 - **Worry-Free Sync Mode**: One gesture to enable/disable automatic metadata sync (auto upload backup when closing a book / device sleeping; auto download and merge update when opening a book).
 
+![Cloud Library - Gesture Shortcut - File Manager](picture/云端书库-快捷手势-文件管理器.png)
+![Cloud Library - Gesture Shortcut - Reader](picture/云端书库-快捷手势-阅读器.png)
+![Cloud Library - Quick Settings](picture/云端书库-快捷设置.png)
+![Cloud Library - ZenUI Quick Settings](picture/云端书库-zenui快捷设置.png)
+![Cloud Library - ZenUI Quick Settings 2](picture/云端书库-zenui快捷设置2.png)
+
 #### Update Notes
 cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 version of MetedataSync (previous name) from Xiaohongshu:
 
