@@ -213,18 +213,21 @@ function AutoSync:showNotification(title, operation, mode, is_success)
         return
     end
 
-    local max_len = 30
+    local max_bytes = 30
     local display_title = title
-    if title and #title > max_len then
-        display_title = title:sub(1, max_len) .. "..."
+    if title and #title > max_bytes then
+        local truncated = title:sub(1, max_bytes)
+        -- 使用 KOReader 的 util 模块
+        local util = require("util")
+        display_title = util.fixUtf8(truncated, "") .. "..."
     end
 
     local icon = is_success and "✓" or "✗"
     local text
     if mode then
-        text = string.format("%s %s - %s - %s", icon, display_title, operation, mode)  -- ✅ 改用 display_title
+        text = string.format("%s %s - %s - %s", icon, display_title, operation, mode)
     else
-        text = string.format("%s %s - %s", icon, display_title, operation)  -- ✅ 改用 display_title
+        text = string.format("%s %s - %s", icon, display_title, operation)
     end
     
     UIManager:show(Notification:new{
