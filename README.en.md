@@ -93,7 +93,7 @@ When enabled, an additional JSON file converted from the original metadata file 
 ![Cloud Library - ZenUI Quick Settings](picture/云端书库-zenui快捷设置.png)
 ![Cloud Library - ZenUI Quick Settings 2](picture/云端书库-zenui快捷设置2.png)
 
-#### Update Notes
+#### Update logs
 cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 version of MetedataSync (previous name) from Xiaohongshu:
 
 1.  Added book sync functionality, allowing batch upload, download, or deletion of cloud books (v1.0)
@@ -114,6 +114,10 @@ cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 versi
 16. Added Worry-Free Sync Mode quick toggle for metadata (v1.3)
 17. Fixed path concatenation issues for sync logs, metadata and temporary folders (v1.3)
 18. Removed debug logs (v1.3)
+19. Added English support: Menu changed to English with Chinese translation (v1.4)
+20. Progress bar for upload/download: Upload progress by book count, download progress by bytes (v1.4)
+21. Manual and auto sync download modes are no longer shared: Prevents temporary switching of download mode in manual sync from affecting automated sync tasks (v1.4)
+22. Optimized update channel: Added three update sources options - GitHub (Latest), GitHub (Pre-release), Gitee (Latest)  (v1.4)
 
 #### Contributing
 
