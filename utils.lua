@@ -6,6 +6,7 @@ local Device = require("device")
 local lfs = require("libs/libkoreader-lfs")
 local DataStorage = require("datastorage")
 local logger = require("logger")
+local _ = require("gettext")
 
 local M = {}
 
@@ -114,7 +115,6 @@ function M.write_log(log_path, content)
         end)
     end
     
-    -- 读取原有内容
     local old_content = ""
     local f = io.open(log_path, "r")
     if f then
@@ -122,7 +122,6 @@ function M.write_log(log_path, content)
         f:close()
     end
     
-    -- 新内容直接拼接在前面（不需要额外加空行，因为新内容末尾已有空行）
     local new_content = content
     if old_content ~= "" then
         new_content = content .. old_content
@@ -139,10 +138,51 @@ end
 
 function M.get_log_path()
     local DataStorage = require("datastorage")
-    return DataStorage:getDataDir() .. "/同步记录.txt"
+    return DataStorage:getDataDir() .. "/cloudlibrary_sync_log.txt"
 end
 
+M.SEPARATOR_LINE = string.rep("=", 30)
 
-M.SEPARATOR_LINE = string.rep("=", 30)  -- 统一使用30个等号
+-- ============================================================
+-- Progress bar utilities for batch operations
+-- ============================================================
+
+function M.create_progress_dialog(title, subtitle, progress_max)
+    local ProgressbarDialog = require("ui/widget/progressbardialog")
+    local blitbuffer = require("ffi/blitbuffer")
+
+    progress_max = tonumber(progress_max) or 0
+    logger.info("progress_max: " .. progress_max .. ", type: " .. type(progress_max))
+
+    local progress_dialog = ProgressbarDialog:new{
+        title = title,
+        subtitle = subtitle,
+        progress = 0,
+        progress_max = tonumber(progress_max) or 0,
+        refresh_time_seconds = 0.1
+    }
+
+    logger.info("progress_max: " .. progress_max .. ", type: " .. type(progress_max))
+
+    if progress_dialog.progress_bar then
+        progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
+    end
+    
+    progress_dialog:show()
+    
+    local function update_progress(completed)
+        if not progress_dialog then return end
+        progress_dialog:reportProgress(completed)
+    end
+    
+    local function close_progress()
+        if progress_dialog then
+            progress_dialog:close()
+            progress_dialog = nil
+        end
+    end
+    
+    return progress_dialog, update_progress, close_progress
+end
 
 return M
