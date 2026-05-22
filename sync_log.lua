@@ -10,7 +10,7 @@ local utils = require("utils")
 local M = {}
 
 local CLOUD_LOG_FILENAME = "cloudlibrary_global_log.txt"
-local LOCAL_LOG_PATH = DataStorage:getDataDir() .. "/同步记录.txt"
+local LOCAL_LOG_PATH = DataStorage:getDataDir() .. "/cloudlibrary_sync_log.txt"
 
 local pending_sync = false
 local sync_timer = nil
@@ -140,7 +140,7 @@ local function split_records(content)
     end
     
     local records = {}
-    local pattern = utils.SEPARATOR_LINE .. "\n同步时间:"
+    local pattern = utils.SEPARATOR_LINE .. "\n" .. _("Sync time:")
     local pos = 1
     local last_pos = 1
     
@@ -152,7 +152,7 @@ local function split_records(content)
         
         if start_pos > last_pos then
             local record = content:sub(last_pos, start_pos - 1)
-            if record:match("同步时间:") then
+            if record:match(_("Sync time:")) then
                 table.insert(records, record)
             end
         end
@@ -163,7 +163,7 @@ local function split_records(content)
     
     if last_pos <= #content then
         local record = content:sub(last_pos)
-        if record:match("同步时间:") then
+        if record:match(_("Sync time:")) then
             table.insert(records, record)
         end
     end
@@ -172,8 +172,8 @@ local function split_records(content)
 end
 
 local function get_record_key(record)
-    local timestamp = record:match("同步时间: ([^\n]+)")
-    local device_id = record:match("设备ID: ([^\n]+)")
+    local timestamp = record:match(_("Sync time: ([^\n]+)"))
+    local device_id = record:match(_("Device ID: ([^\n]+)"))
     if timestamp and device_id then
         return timestamp .. "|" .. device_id
     end
@@ -184,7 +184,7 @@ function M.doSync(silent)
     if not NetworkMgr:isOnline() then
         if not silent then
             UIManager:show(Notification:new{
-                text = _("无网络连接，无法同步"),
+                text = _("No network connection, cannot sync"),
                 timeout = 2
             })
         end
@@ -193,7 +193,7 @@ function M.doSync(silent)
     
     if not silent then
         UIManager:show(Notification:new{
-            text = _("正在同步记录..."),
+            text = _("Syncing logs..."),
             timeout = 1
         })
     end
@@ -235,8 +235,8 @@ function M.doSync(silent)
         end
         
         table.sort(all_records, function(a, b)
-            local ta = a:match("同步时间: ([^\n]+)") or ""
-            local tb = b:match("同步时间: ([^\n]+)") or ""
+            local ta = a:match(_("Sync time: ([^\n]+)")) or ""
+            local tb = b:match(_("Sync time: ([^\n]+)")) or ""
             return ta > tb
         end)
         
@@ -252,9 +252,9 @@ function M.doSync(silent)
         
         local result_msg = ""
         if success then
-            result_msg = string.format(_("同步成功！新增 %d 条记录，共 %d 条"), new_count, #all_records)
+            result_msg = string.format(_("Sync successful! %d new records, %d total"), new_count, #all_records)
         else
-            result_msg = _("同步失败，请检查云存储配置")
+            result_msg = _("Sync failed, please check cloud storage configuration")
         end
         
         if not silent then
@@ -292,23 +292,23 @@ end
 function M.clear_cloud_log()
     local server = get_server()
     if not server then
-        return false, "未配置云存储服务"
+        return false, _("Cloud storage service not configured")
     end
     
     local api = get_api(server)
     if not api then
-        return false, "不支持的云服务类型"
+        return false, _("Unsupported cloud storage type")
     end
     
     local cloud_path = get_cloud_path(server)
     if not cloud_path then
-        return false, "无法获取云端路径"
+        return false, _("Cannot get cloud path")
     end
     
     local temp_file = DataStorage:getDataDir() .. "/cloud_log_empty.tmp"
     local f = io.open(temp_file, "w")
     if not f then
-        return false, "无法创建临时文件"
+        return false, _("Cannot create temporary file")
     end
     f:write("")
     f:close()
@@ -327,9 +327,9 @@ function M.clear_cloud_log()
     os.remove(temp_file)
     
     if type(code) == "number" and code >= 200 and code < 300 then
-        return true, "云端同步记录已清空"
+        return true, _("Cloud sync logs cleared")
     else
-        return false, "清空失败，HTTP状态码: " .. tostring(code)
+        return false, _("Clear failed, HTTP status: ") .. tostring(code)
     end
 end
 
