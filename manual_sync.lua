@@ -7,6 +7,8 @@ local DataStorage = require("datastorage")
 local _ = require("gettext")
 local Event = require("ui/event")
 local utils = require("utils")  
+local ProgressbarDialog = require("ui/widget/progressbardialog")
+local blitbuffer = require("ffi/blitbuffer") 
 
 local ManualSync = {}
 
@@ -25,7 +27,7 @@ end
 function ManualSync:syncCurrentBook(is_upload)
     local doc = self.plugin.ui.document
     if not doc then
-        self:showMsg(_("请先打开一本书"))
+        self:showMsg(_("Please open a book first"))
         return
     end
     
@@ -34,58 +36,56 @@ function ManualSync:syncCurrentBook(is_upload)
     local metadata_file = DocSettings:findSidecarFile(file)
     
     if not metadata_file then
-        self:showMsg(_("找不到当前书籍的元数据文件"))
+        self:showMsg(_("Local metadata file not found"))
         return
     end
     
-    -- 👇 检查1：网络连接
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isOnline() then
-        self:showMsg(_("网络未连接，无法同步"))
+        self:showMsg(_("No network connection, cannot sync"))
         return
     end
 
-    -- 👇 检查2：服务器配置
     local remote = require("remote")
     local server = remote.get_server()
     if not server then
-        self:showMsg(_("未配置云存储服务，请先在设置中配置"))
+        self:showMsg(_("Cloud storage service not configured, please configure in settings first"))
         return
     end
 
-    -- 👇 检查3：云端目录
     if not server.url or server.url == "" then
-        self:showMsg(_("未设置云端目录，请先在云端目录中配置"))
+        self:showMsg(_("Cloud directory not set, please configure in cloud directory settings"))
         return
     end
 
-    -- 👇 检查4：云服务类型
     local api = remote.get_api(server)
     if not api then
-        self:showMsg(_("不支持的云服务类型，请使用 WebDAV 或 Dropbox"))
+        self:showMsg(_("Unsupported cloud storage type, please use WebDAV or Dropbox"))
         return
     end
-    -- 👆
 
     if is_upload then
         self:doSyncCurrentBook(is_upload, file, metadata_file)
     else
-        UIManager:show(ConfirmBox:new{
-            title = _("确认下载"),
-            text = _("此操作需要重新打开当前书籍以覆盖更新元数据，是否继续？"),
-            ok_text = _("继续"),
-            cancel_text = _("取消"),
+        local confirm_dialog = ConfirmBox:new{
+            title = _("Confirm download"),
+            text = _("This operation requires reopening the current book to override update metadata. Continue?"),
+            ok_text = _("Continue"),
+            cancel_text = _("Cancel"),
             ok_callback = function()
-                self:doSyncCurrentBook(is_upload, file, metadata_file)
+                UIManager:nextTick(function()
+                    self:doSyncCurrentBook(is_upload, file, metadata_file)
+                end)
             end
-        })
+        }
+        UIManager:show(confirm_dialog)
     end
 end
 
 function ManualSync:syncCurrentBookMerge()
     local doc = self.plugin.ui.document
     if not doc then
-        self:showMsg(_("请先打开一本书"))
+        self:showMsg(_("Please open a book first"))
         return
     end
     
@@ -94,50 +94,48 @@ function ManualSync:syncCurrentBookMerge()
     local metadata_file = DocSettings:findSidecarFile(file)
     
     if not metadata_file then
-        self:showMsg(_("找不到当前书籍的元数据文件"))
+        self:showMsg(_("Local metadata file not found"))
         return
     end
     
-    -- 👇 检查1：网络连接
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isOnline() then
-        self:showMsg(_("网络未连接，无法同步"))
+        self:showMsg(_("No network connection, cannot sync"))
         return
     end
 
-    -- 👇 检查2：服务器配置
     local remote = require("remote")
     local server = remote.get_server()
     if not server then
-        self:showMsg(_("未配置云存储服务，请先在设置中配置"))
+        self:showMsg(_("Cloud storage service not configured, please configure in settings first"))
         return
     end
 
-    -- 👇 检查3：云端目录
     if not server.url or server.url == "" then
-        self:showMsg(_("未设置云端目录，请先在云端目录中配置"))
+        self:showMsg(_("Cloud directory not set, please configure in cloud directory settings"))
         return
     end
 
-    -- 👇 检查4：云服务类型
     local api = remote.get_api(server)
     if not api then
-        self:showMsg(_("不支持的云服务类型，请使用 WebDAV 或 Dropbox"))
+        self:showMsg(_("Unsupported cloud storage type, please use WebDAV or Dropbox"))
         return
     end
-    -- 👆
 
     self.plugin.ui:saveSettings()
     
-    UIManager:show(ConfirmBox:new{
-        title = _("确认合并下载"),
-        text = _("此操作需要重新打开当前书籍以合并更新元数据。是否继续？"),
-        ok_text = _("继续"),
-        cancel_text = _("取消"),
+    local confirm_dialog = ConfirmBox:new{
+        title = _("Confirm merge download"),
+        text = _("This operation requires reopening the current book to merge update metadata. Continue?"),
+        ok_text = _("Continue"),
+        cancel_text = _("Cancel"),
         ok_callback = function()
-            self:doSyncCurrentBookMerge(file, metadata_file)
+            UIManager:nextTick(function()
+                self:doSyncCurrentBookMerge(file, metadata_file)
+            end)
         end
-    })
+    }
+    UIManager:show(confirm_dialog)
 end
 
 function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
@@ -166,28 +164,59 @@ function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
     }
     
     local remote = require("remote")
-    local success, error_type = false, nil
     local naming_mode = self.settings.metadata_naming_mode or "metadata"
     
+    local success, error_type = false, nil
+    
     if is_upload then
+        -- 上传：直接执行，不显示进度条
         success, error_type = remote.upload_book(book, naming_mode)
     else
-        success, error_type = remote.download_book(book, naming_mode)
+        -- 下载：使用 manual_download_mode 决定模式
+        local file_size = lfs.attributes(metadata_file, "size") or 0
+        local total_processed = 0
+        
+        local book_title = book.title or book.book_basename or "Unknown"
+        local progress_dialog = ProgressbarDialog:new{
+            title = _("Downloading metadata..."),
+            subtitle = book_title,
+            progress = 0,
+            progress_max = file_size,
+            refresh_time_seconds = 0.1
+        }
+        if progress_dialog.progress_bar then
+            progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
+        end
+        progress_dialog:show()
+        
+        local function update_progress(byte_count)
+            total_processed = byte_count
+            progress_dialog:reportProgress(total_processed)
+            UIManager:setDirty(progress_dialog, "ui")
+        end
+        
+        -- 使用 manual_download_mode
+        if self.settings.manual_download_mode == "merge" then
+            success, error_type = remote.download_book_merge(book, naming_mode, update_progress)
+        else
+            success, error_type = remote.download_book(book, naming_mode, update_progress)
+        end
+        progress_dialog:close()
     end
     
     if success then
-        local success_text = is_upload and "✓ 上传成功" or "✓ 下载成功(覆盖更新)"
+        local success_text = is_upload and _("✓ Upload successful") or _("✓ Download successful (Overwrite)")
         UIManager:show(Notification:new{
             text = success_text,
             timeout = 2
         })
         
         self:writeSingleLog(book, is_upload, false, true)
-        self:updateLastSync(is_upload and "元数据同步-单本上传-覆盖云端" or "元数据同步-单本下载-覆盖更新")
+        self:updateLastSync(is_upload and _("Metadata sync") .. "-" .. _("Single upload") .. "-" .. _("Overwrite cloud") or _("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Overwrite"))
     else
         local error_info = remote.get_error_message(error_type, is_upload, naming_mode)
         UIManager:show(Notification:new{
-            text = string.format(is_upload and "✗ 上传失败: %s" or "✗ 下载失败: %s", error_info.reason),
+            text = string.format(is_upload and _("✗ Upload failed: %s") or _("✗ Download failed: %s"), error_info.reason),
             timeout = 3
         })
         
@@ -224,16 +253,41 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
     
     local remote = require("remote")
     local naming_mode = self.settings.metadata_naming_mode or "metadata"
-    local success, error_type = remote.download_book_merge(book, naming_mode)
+    
+    -- 下载：显示进度条
+    local file_size = lfs.attributes(metadata_file, "size") or 0
+    local total_processed = 0
+    
+    local book_title = book.title or book.book_basename or "Unknown"
+    local progress_dialog = ProgressbarDialog:new{
+        title = _("Downloading metadata..."),
+        subtitle = book_title,
+        progress = 0,
+        progress_max = file_size,
+        refresh_time_seconds = 0.1
+    }
+    if progress_dialog.progress_bar then
+        progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
+    end
+    progress_dialog:show()
+    
+    local function update_progress(byte_count)
+        total_processed = byte_count
+        progress_dialog:reportProgress(total_processed)
+        UIManager:setDirty(progress_dialog, "ui")
+    end
+    
+    local success, error_type = remote.download_book_merge(book, naming_mode, update_progress)
+    progress_dialog:close()
     
     if success then
         UIManager:show(Notification:new{
-            text = "✓ 下载成功(合并更新)",
+            text = _("✓ Download successful (Merge)"),
             timeout = 2
         })
         
         self:writeSingleLog(book, false, true, true)
-        self:updateLastSync("元数据同步-单本下载-合并更新")
+        self:updateLastSync(_("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Merge"))
         
         UIManager:scheduleIn(0.5, function()
             if self.plugin.ui and self.plugin.ui.document then
@@ -243,7 +297,7 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
     else
         local error_info = remote.get_error_message(error_type, false, naming_mode)
         UIManager:show(Notification:new{
-            text = string.format("✗ 下载失败(合并更新): %s", error_info.reason),
+            text = string.format(_("✗ Download failed (Merge): %s"), error_info.reason),
             timeout = 3
         })
         
@@ -254,48 +308,43 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
 end
 
 function ManualSync:batchSyncWithFMSelection(is_upload, is_merge)
-    -- 👇 检查1：网络连接
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isOnline() then
-        self:showMsg(_("网络未连接，无法同步"))
+        self:showMsg(_("No network connection, cannot sync"))
         return
     end
 
-    -- 👇 检查2：服务器配置
     local remote = require("remote")
     local server = remote.get_server()
     if not server then
-        self:showMsg(_("未配置云存储服务，请先在设置中配置"))
+        self:showMsg(_("Cloud storage service not configured, please configure in settings first"))
         return
     end
 
-    -- 👇 检查3：云端目录
     if not server.url or server.url == "" then
-        self:showMsg(_("未设置云端目录，请先在云端目录中配置"))
+        self:showMsg(_("Cloud directory not set, please configure in cloud directory settings"))
         return
     end
 
-    -- 👇 检查4：云服务类型
     local api = remote.get_api(server)
     if not api then
-        self:showMsg(_("不支持的云服务类型，请使用 WebDAV 或 Dropbox"))
+        self:showMsg(_("Unsupported cloud storage type, please use WebDAV or Dropbox"))
         return
     end
-    -- 👆
 
     local ui = self.plugin.ui
     
     local action_text = ""
     local button_text = ""
     if is_upload then
-        action_text = "上传"
-        button_text = "批量上传元数据"
+        action_text = _("upload")
+        button_text = _("Batch upload metadata")
     else
-        action_text = "下载"
+        action_text = _("download")
         if is_merge then
-            button_text = "批量下载元数据-合并更新"
+            button_text = _("Batch download metadata - Merge")
         else
-            button_text = "批量下载元数据-覆盖更新"
+            button_text = _("Batch download metadata - Overwrite")
         end
     end
     
@@ -318,7 +367,7 @@ function ManualSync:batchSyncWithFMSelection(is_upload, is_merge)
         end
         
         UIManager:show(Notification:new{
-            text = string.format(_("请勾选要%s的书籍，再点击「%s」"), action_text, button_text),
+            text = string.format(_("Please select books to %s, then tap \"%s\""), action_text, button_text),
             timeout = 5
         })
         return
@@ -328,14 +377,14 @@ function ManualSync:batchSyncWithFMSelection(is_upload, is_merge)
     local fm = FileManager.instance
     
     if not fm then
-        self:showMsg(_("无法获取文件管理器实例"))
+        self:showMsg(_("Unable to get file manager instance"))
         return
     end
     
     if fm.selected_files == nil then
         fm:onToggleSelectMode(true)
         UIManager:show(Notification:new{
-            text = string.format(_("请勾选要%s的书籍，再点击「%s」"), action_text, button_text),
+            text = string.format(_("Please select books to %s, then tap \"%s\""), action_text, button_text),
             timeout = 5
         })
         return
@@ -344,7 +393,7 @@ function ManualSync:batchSyncWithFMSelection(is_upload, is_merge)
     local selected_files = fm.selected_files
     if not selected_files or next(selected_files) == nil then
         UIManager:show(Notification:new{
-            text = string.format(_("请勾选要%s的书籍，再点击「%s」"), action_text, button_text),
+            text = string.format(_("Please select books to %s, then tap \"%s\""), action_text, button_text),
             timeout = 5
         })
         return
@@ -384,21 +433,21 @@ function ManualSync:processSelectedFiles(is_upload, is_merge, selected_files)
     end
     
     if #books == 0 then
-        self:showMsg(_("没有选中任何文件"))
+        self:showMsg(_("No files selected"))
         return
     end
     
     local action_text = ""
     if is_upload then
-        action_text = "上传"
+        action_text = _("upload")
     else
-        action_text = is_merge and "下载-合并更新" or "下载-覆盖更新"
+        action_text = is_merge and _("download-merge") or _("download-overwrite")
     end
     
     UIManager:show(ConfirmBox:new{
-        text = string.format("将%s %d 本书籍的元数据", action_text, #books),
-        ok_text = _("继续"),
-        cancel_text = _("取消"),
+        text = string.format(_("%s metadata for %d book(s)"), action_text, #books),
+        ok_text = _("Continue"),
+        cancel_text = _("Cancel"),
         ok_callback = function()
             self:doBatchSync(is_upload, is_merge, books)
         end
@@ -414,79 +463,115 @@ function ManualSync:doBatchSync(is_upload, is_merge, selected_books)
         failed = {}
     }
     
-    for _, book in ipairs(selected_books) do
-        if not book.metadata or not lfs.attributes(book.metadata, "mode") then
-            table.insert(sync_results.failed, {
-                title = book.title,
-                file = book.file,
-                reason = "未找到本地元数据文件",
-                solution = "请先打开该书籍生成元数据文件"
-            })
-        else
-            local success, error_type = false, nil
+    local total = #selected_books
+    local completed = 0
+    local index = 1
+    
+    -- 直接创建进度条
+    local title = is_upload and _("Uploading metadata...") or _("Downloading metadata...")
+    local progress_dialog = ProgressbarDialog:new{
+        title = title,
+        subtitle = string.format("%d book(s)", total),
+        progress = 0,
+        progress_max = total,
+        refresh_time_seconds = 0.1
+    }
+    if progress_dialog.progress_bar then
+        progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
+    end
+    progress_dialog:show()
+    
+    local function process_next()
+        if index > total then
+            progress_dialog:close()
+            
+            self:writeBatchLog(sync_results, is_upload, is_merge)
+            
+            local msg = ""
             if is_upload then
-                success, error_type = remote.upload_book(book, naming_mode)
+                msg = string.format(_("Metadata upload completed: %d success, %d failed"), #sync_results.success, #sync_results.failed)
             else
-                if is_merge then
-                    success, error_type = remote.download_book_merge(book, naming_mode)
-                else
-                    success, error_type = remote.download_book(book, naming_mode)
-                end
+                local mode_text = is_merge and _("Merge") or _("Overwrite")
+                msg = string.format(_("Metadata download completed (%s): %d success, %d failed"), mode_text, #sync_results.success, #sync_results.failed)
             end
             
-            if success then
-                table.insert(sync_results.success, {
-                    title = book.title,
-                    file = book.file
-                })
+            UIManager:show(Notification:new{
+                text = msg,
+                timeout = 2
+            })
+            
+            local sync_type = ""
+            if is_upload then
+                sync_type = _("Metadata sync") .. "-" .. _("Batch upload") .. "-" .. _("Overwrite cloud")
             else
-                local error_info = remote.get_error_message(error_type, is_upload, naming_mode)
+                sync_type = is_merge and (_("Metadata sync") .. "-" .. _("Batch download") .. "-" .. _("Merge")) or (_("Metadata sync") .. "-" .. _("Batch download") .. "-" .. _("Overwrite"))
+            end
+            self:updateLastSync(sync_type)
+            
+            local FileManager = require("apps/filemanager/filemanager")
+            local fm = FileManager.instance
+            if fm then
+                if fm.file_chooser and fm.file_chooser.item_table then
+                    for _, item in ipairs(fm.file_chooser.item_table) do
+                        if item.is_file then
+                            item.dim = nil
+                        end
+                    end
+                    fm.file_chooser:updateItems(1, true)
+                end
+                fm:onToggleSelectMode(true)
+            end
+            return
+        end
+        
+        local book = selected_books[index]
+        index = index + 1
+        
+        UIManager:scheduleIn(0, function()
+            if not book.metadata or not lfs.attributes(book.metadata, "mode") then
                 table.insert(sync_results.failed, {
                     title = book.title,
                     file = book.file,
-                    reason = error_info.reason,
-                    solution = error_info.solution
+                    reason = _("Local metadata file not found"),
+                    solution = _("Please open the book first to generate metadata file")
                 })
-            end
-        end
-    end
-    
-    self:writeBatchLog(sync_results, is_upload, is_merge)
-    
-    local msg = ""
-    if is_upload then
-        msg = string.format("元数据上传完成: %d 成功, %d 失败", #sync_results.success, #sync_results.failed)
-    else
-        local mode_text = is_merge and "合并更新" or "覆盖更新"
-        msg = string.format("元数据下载完成-%s: %d 成功, %d 失败", mode_text, #sync_results.success, #sync_results.failed)
-    end
-    
-    UIManager:show(Notification:new{
-        text = msg,
-        timeout = 2
-    })
-    
-    local sync_type = ""
-    if is_upload then
-        sync_type = "元数据同步-批量上传-覆盖云端"
-    else
-        sync_type = is_merge and "元数据同步-批量下载-合并更新" or "元数据同步-批量下载-覆盖更新"
-    end
-    self:updateLastSync(sync_type)
-    
-    local FileManager = require("apps/filemanager/filemanager")
-    local fm = FileManager.instance
-    if fm then
-        if fm.file_chooser and fm.file_chooser.item_table then
-            for _, item in ipairs(fm.file_chooser.item_table) do
-                if item.is_file then
-                    item.dim = nil
+            else
+                local success, error_type = false, nil
+                if is_upload then
+                    success, error_type = remote.upload_book(book, naming_mode)
+                else
+                    if is_merge then
+                        success, error_type = remote.download_book_merge(book, naming_mode)
+                    else
+                        success, error_type = remote.download_book(book, naming_mode)
+                    end
+                end
+                
+                if success then
+                    table.insert(sync_results.success, {
+                        title = book.title,
+                        file = book.file
+                    })
+                else
+                    local error_info = remote.get_error_message(error_type, is_upload, naming_mode)
+                    table.insert(sync_results.failed, {
+                        title = book.title,
+                        file = book.file,
+                        reason = error_info.reason,
+                        solution = error_info.solution
+                    })
                 end
             end
-            fm.file_chooser:updateItems(1, true)
-        end
-        fm:onToggleSelectMode(true)
+            
+            completed = completed + 1
+            progress_dialog:reportProgress(completed)
+            UIManager:setDirty(progress_dialog, "ui")
+            
+            process_next()
+        end)
     end
+    
+    process_next()
 end
 
 function ManualSync:writeSingleLog(book, is_upload, is_merge, success, error_reason)
@@ -498,24 +583,24 @@ function ManualSync:writeSingleLog(book, is_upload, is_merge, success, error_rea
     
     local operation_type = ""
     if is_upload then
-        operation_type = "元数据同步-单本上传-覆盖云端"
+        operation_type = _("Metadata sync") .. "-" .. _("Single upload") .. "-" .. _("Overwrite cloud")
     else
-        operation_type = is_merge and "元数据同步-单本下载-合并更新" or "元数据同步-单本下载-覆盖更新"
+        operation_type = is_merge and (_("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Merge")) or (_("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Overwrite"))
     end
     
     local new_record = {}
     table.insert(new_record, utils.SEPARATOR_LINE)
-    table.insert(new_record, string.format("同步时间: %s", timestamp))
-    table.insert(new_record, string.format("操作设备: %s", device_name))
-    table.insert(new_record, string.format("设备ID: %s", device_id))
-    table.insert(new_record, string.format("操作类型: %s", operation_type))
+    table.insert(new_record, string.format(_("Sync time: %s"), timestamp))
+    table.insert(new_record, string.format(_("Device: %s"), device_name))
+    table.insert(new_record, string.format(_("Device ID: %s"), device_id))
+    table.insert(new_record, string.format(_("Operation type: %s"), operation_type))
     table.insert(new_record, utils.SEPARATOR_LINE)
     
     if success then
-        table.insert(new_record, string.format("【成功】✓ %s", book.title or book.book_basename))
+        table.insert(new_record, string.format(_("[Success] ✓ %s"), book.title or book.book_basename))
     else
-        table.insert(new_record, string.format("【失败】✗ %s", book.title or book.book_basename))
-        table.insert(new_record, string.format("原因: %s", error_reason or "未知错误"))
+        table.insert(new_record, string.format(_("[Failed] ✗ %s"), book.title or book.book_basename))
+        table.insert(new_record, string.format(_("Reason: %s"), error_reason or _("Unknown error")))
     end
     table.insert(new_record, "")
     table.insert(new_record, "")
@@ -542,9 +627,9 @@ function ManualSync:writeBatchLog(results, is_upload, is_merge)
     
     local operation_type = ""
     if is_upload then
-        operation_type = "元数据同步-批量上传-覆盖云端"
+        operation_type = _("Metadata sync") .. "-" .. _("Batch upload") .. "-" .. _("Overwrite cloud")
     else
-        operation_type = is_merge and "元数据同步-批量下载-合并更新" or "元数据同步-批量下载-覆盖更新"
+        operation_type = is_merge and (_("Metadata sync") .. "-" .. _("Batch download") .. "-" .. _("Merge")) or (_("Metadata sync") .. "-" .. _("Batch download") .. "-" .. _("Overwrite"))
     end
     
     local failed_by_reason = {}
@@ -564,40 +649,40 @@ function ManualSync:writeBatchLog(results, is_upload, is_merge)
     
     local new_record = {}
     table.insert(new_record, utils.SEPARATOR_LINE)
-    table.insert(new_record, string.format("同步时间: %s", timestamp))
-    table.insert(new_record, string.format("操作设备: %s", device_name))
-    table.insert(new_record, string.format("设备ID: %s", device_id))
-    table.insert(new_record, string.format("操作类型: %s", operation_type))
+    table.insert(new_record, string.format(_("Sync time: %s"), timestamp))
+    table.insert(new_record, string.format(_("Device: %s"), device_name))
+    table.insert(new_record, string.format(_("Device ID: %s"), device_id))
+    table.insert(new_record, string.format(_("Operation type: %s"), operation_type))
     table.insert(new_record, utils.SEPARATOR_LINE)
     
-    table.insert(new_record, string.format("【成功】(%d 本)", #results.success))
+    table.insert(new_record, string.format(_("[Success] (%d books)"), #results.success))
     table.insert(new_record, string.rep("-", 40))
     if #results.success > 0 then
         for _, book in ipairs(results.success) do
             table.insert(new_record, string.format("  ✓ %s", book.title))
         end
     else
-        table.insert(new_record, "  无")
+        table.insert(new_record, _("  None"))
     end
     table.insert(new_record, "")
     
-    table.insert(new_record, string.format("【失败】(%d 本)", #results.failed))
+    table.insert(new_record, string.format(_("[Failed] (%d books)"), #results.failed))
     table.insert(new_record, string.rep("-", 40))
     if #results.failed > 0 then
         local reason_index = 0
         for reason, info in pairs(failed_by_reason) do
             reason_index = reason_index + 1
-            table.insert(new_record, string.format("\n【失败原因 %d】%s", reason_index, reason))
+            table.insert(new_record, string.format("\n" .. _("[Failure reason %d] %s"), reason_index, reason))
             table.insert(new_record, string.rep("~", 40))
-            table.insert(new_record, string.format("✓解决方案: %s", info.solution or "请检查网络和配置"))
+            table.insert(new_record, string.format(_("Solution: %s"), info.solution or _("Please check network and configuration")))
             table.insert(new_record, "")
-            table.insert(new_record, "✗失败书籍:")
+            table.insert(new_record, _("Failed books:"))
             for i, book in ipairs(info.books) do
                 table.insert(new_record, string.format("  (%d) %s", i, book.title))
             end
         end
     else
-        table.insert(new_record, "  无")
+        table.insert(new_record, _("  None"))
     end
     table.insert(new_record, "")
     table.insert(new_record, "")
