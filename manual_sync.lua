@@ -67,12 +67,17 @@ function ManualSync:syncCurrentBook(is_upload)
     if is_upload then
         self:doSyncCurrentBook(is_upload, file, metadata_file)
     else
+
         local confirm_dialog = ConfirmBox:new{
             title = _("Confirm download"),
             text = _("This operation requires reopening the current book to override update metadata. Continue?"),
             ok_text = _("Continue"),
             cancel_text = _("Cancel"),
             ok_callback = function()
+                 UIManager:show(Notification:new{
+                     text = _("Downloading and applying metadata - Overwrite..."),
+                     timeout = 0
+                 })
                 UIManager:nextTick(function()
                     self:doSyncCurrentBook(is_upload, file, metadata_file)
                 end)
@@ -130,6 +135,10 @@ function ManualSync:syncCurrentBookMerge()
         ok_text = _("Continue"),
         cancel_text = _("Cancel"),
         ok_callback = function()
+            UIManager:show(Notification:new{
+                text = _("Downloading and applying metadata - Merge..."),
+                timeout = 0
+            })
             UIManager:nextTick(function()
                 self:doSyncCurrentBookMerge(file, metadata_file)
             end)
@@ -144,7 +153,7 @@ function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
     else
         self.auto_sync:setSkipDownload(true)
     end
-    
+
     local props = {}
     if self.plugin.ui and self.plugin.ui.bookinfo then
         props = self.plugin.ui.bookinfo:getDocProps(file, nil, true) or {}
@@ -154,7 +163,7 @@ function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
     if type(author) == "table" then
         author = author[1]
     end
-    
+
     local book = {
         file = file,
         metadata = metadata_file,
@@ -162,77 +171,107 @@ function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
         book_basename = file:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
         author = author,
     }
-    
+
     local remote = require("remote")
     local naming_mode = self.settings.metadata_naming_mode or "metadata"
-    
-    local success, error_type = false, nil
-    
+
     if is_upload then
-        -- 上传：直接执行，不显示进度条
-        success, error_type = remote.upload_book(book, naming_mode)
-    else
-        -- 下载：使用 manual_download_mode 决定模式
-        local file_size = lfs.attributes(metadata_file, "size") or 0
-        local total_processed = 0
-        
-        local book_title = book.title or book.book_basename or "Unknown"
-        local progress_dialog = ProgressbarDialog:new{
-            title = _("Downloading metadata..."),
-            subtitle = book_title,
-            progress = 0,
-            progress_max = file_size,
-            refresh_time_seconds = 0.1
-        }
-        if progress_dialog.progress_bar then
-            progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
-        end
-        progress_dialog:show()
-        
-        local function update_progress(byte_count)
-            total_processed = byte_count
-            progress_dialog:reportProgress(total_processed)
-            UIManager:setDirty(progress_dialog, "ui")
-        end
-        
-        -- 使用 manual_download_mode
-        if self.settings.manual_download_mode == "merge" then
-            success, error_type = remote.download_book_merge(book, naming_mode, update_progress)
+        local success, error_type = remote.upload_book(book, naming_mode)
+
+        if success then
+             UIManager:show(Notification:new{
+                 text = _("✓ Upload successful"),
+                 timeout = 2
+             })
+            self:writeSingleLog(book, true, false, true)
+            self:updateLastSync(_("Metadata sync") .. "-" .. _("Single upload") .. "-" .. _("Overwrite cloud"))
         else
-            success, error_type = remote.download_book(book, naming_mode, update_progress)
+            local error_info = remote.get_error_message(error_type, true, naming_mode)
+            UIManager:show(Notification:new{
+                text = string.format(_("✗ Upload failed: %s"), error_info.reason),
+                timeout = 2
+            })
+            self:writeSingleLog(book, true, false, false, error_info.reason)
         end
-        progress_dialog:close()
+        self.auto_sync:setSkipUpload(false)
+        return
     end
-    
-    if success then
-        local success_text = is_upload and _("✓ Upload successful") or _("✓ Download successful (Overwrite)")
+
+    -- Download
+    local ReaderUI = require("apps/reader/readerui")
+    local current_ui = ReaderUI.instance
+    local is_currently_open = current_ui and current_ui.document and current_ui.document.file == file
+
+    -- Download to temp file
+    local downloaded_file, cloud_filename, err_type = remote.download_to_temp(book, naming_mode)
+
+    if not downloaded_file then
+        local error_info = remote.get_error_message(err_type, false, naming_mode)
         UIManager:show(Notification:new{
-            text = success_text,
+            text = string.format(_("✗ Download failed: %s"), error_info.reason),
             timeout = 2
         })
-        
-        self:writeSingleLog(book, is_upload, false, true)
-        self:updateLastSync(is_upload and _("Metadata sync") .. "-" .. _("Single upload") .. "-" .. _("Overwrite cloud") or _("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Overwrite"))
-    else
-        local error_info = remote.get_error_message(error_type, is_upload, naming_mode)
-        UIManager:show(Notification:new{
-            text = string.format(is_upload and _("✗ Upload failed: %s") or _("✗ Download failed: %s"), error_info.reason),
-            timeout = 3
-        })
-        
-        self:writeSingleLog(book, is_upload, false, false, error_info.reason)
-    end
-    
-    if is_upload then
-        self.auto_sync:setSkipUpload(false)
-    else
+        self:writeSingleLog(book, false, false, false, error_info.reason)
         self.auto_sync:setSkipDownload(false)
+        return
     end
+
+    -- Close current book if open
+    if is_currently_open then
+        self.auto_sync:setSkipUpload(true)
+        G_reader_settings:saveSetting("cloudlibrary_skip_auto_download", true)
+        current_ui:saveSettings()
+        current_ui.tearing_down = true
+        current_ui:onClose()
+    end
+
+    -- Merge or override metadata
+    local Merger = require("merge")
+    local merged_data
+    local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
+    local keep_local_settings = settings.override_keep_local_settings == true
+
+    if keep_local_settings then
+        merged_data = Merger.override_merge(book.metadata, downloaded_file)
+    else
+        merged_data = Merger.load_metadata(downloaded_file)
+    end
+
+    os.remove(downloaded_file)
+
+    if not merged_data then
+        UIManager:show(Notification:new{
+            text = _("✗ Merge failed"),
+            timeout = 2
+        })
+        self:writeSingleLog(book, false, false, false, "merge_failed")
+        self.auto_sync:setSkipDownload(false)
+        return
+    end
+
+    remote.save_metadata_native(merged_data, book.file)
+
+    -- Reopen the book
+    if is_currently_open then
+        UIManager:scheduleIn(0.1, function()
+            ReaderUI:showReader(book.file)
+        end)
+    end
+
+    -- Show success notification
+    UIManager:show(Notification:new{
+        text = _("✓ Applying successful (Overwrite)"),
+        timeout = 2
+    })
+
+    self:writeSingleLog(book, false, false, true)
+    self:updateLastSync(_("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Overwrite"))
+    self.auto_sync:setSkipDownload(false)
 end
 
 function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
     self.auto_sync:setSkipDownload(true)
-    
+
     local props = {}
     if self.plugin.ui and self.plugin.ui.bookinfo then
         props = self.plugin.ui.bookinfo:getDocProps(file, nil, true) or {}
@@ -242,7 +281,7 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
     if type(author) == "table" then
         author = author[1]
     end
-    
+
     local book = {
         file = file,
         metadata = metadata_file,
@@ -250,60 +289,76 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
         book_basename = file:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
         author = author,
     }
-    
+
     local remote = require("remote")
     local naming_mode = self.settings.metadata_naming_mode or "metadata"
-    
-    -- 下载：显示进度条
-    local file_size = lfs.attributes(metadata_file, "size") or 0
-    local total_processed = 0
-    
-    local book_title = book.title or book.book_basename or "Unknown"
-    local progress_dialog = ProgressbarDialog:new{
-        title = _("Downloading metadata..."),
-        subtitle = book_title,
-        progress = 0,
-        progress_max = file_size,
-        refresh_time_seconds = 0.1
-    }
-    if progress_dialog.progress_bar then
-        progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
-    end
-    progress_dialog:show()
-    
-    local function update_progress(byte_count)
-        total_processed = byte_count
-        progress_dialog:reportProgress(total_processed)
-        UIManager:setDirty(progress_dialog, "ui")
-    end
-    
-    local success, error_type = remote.download_book_merge(book, naming_mode, update_progress)
-    progress_dialog:close()
-    
-    if success then
+
+    local ReaderUI = require("apps/reader/readerui")
+    local current_ui = ReaderUI.instance
+    local is_currently_open = current_ui and current_ui.document and current_ui.document.file == file
+
+    -- Download to temp file
+    local downloaded_file, cloud_filename, err_type = remote.download_to_temp(book, naming_mode)
+
+    if not downloaded_file then
+        local error_info = remote.get_error_message(err_type, false, naming_mode)
         UIManager:show(Notification:new{
-            text = _("✓ Download successful (Merge)"),
-            timeout = 2
-        })
-        
-        self:writeSingleLog(book, false, true, true)
-        self:updateLastSync(_("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Merge"))
-        
-        UIManager:scheduleIn(0.5, function()
-            if self.plugin.ui and self.plugin.ui.document then
-                self.plugin.ui:handleEvent(Event:new("RedrawCurrentView"))
-            end
-        end)
-    else
-        local error_info = remote.get_error_message(error_type, false, naming_mode)
-        UIManager:show(Notification:new{
-            text = string.format(_("✗ Download failed (Merge): %s"), error_info.reason),
+            text = string.format(_("✗ Download failed: %s"), error_info.reason),
             timeout = 3
         })
-        
         self:writeSingleLog(book, false, true, false, error_info.reason)
+        self.auto_sync:setSkipDownload(false)
+        return
     end
-    
+
+    -- Close current book if open
+    if is_currently_open then
+        self.auto_sync:setSkipUpload(true)
+        G_reader_settings:saveSetting("cloudlibrary_skip_auto_download", true)
+        current_ui:saveSettings()
+        current_ui.tearing_down = true
+        current_ui:onClose()
+    end
+
+    -- Merge metadata
+    local Merger = require("merge")
+    local merged_data = Merger.merge(book.metadata, downloaded_file)
+    os.remove(downloaded_file)
+
+    if not merged_data then
+        UIManager:show(Notification:new{
+            text = _("✗ Merge failed"),
+            timeout = 3
+        })
+        self:writeSingleLog(book, false, true, false, "merge_failed")
+        self.auto_sync:setSkipDownload(false)
+        return
+    end
+
+    remote.save_metadata_native(merged_data, book.file)
+
+    -- Reopen the book
+    if is_currently_open then
+        UIManager:scheduleIn(0.1, function()
+            ReaderUI:showReader(book.file)
+        end)
+    end
+
+    -- Show success notification
+    UIManager:show(Notification:new{
+        text = _("✓ Applying successful (Overwrite)"),
+        timeout = 2
+    })
+
+    self:writeSingleLog(book, false, true, true)
+    self:updateLastSync(_("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Merge"))
+
+    UIManager:scheduleIn(0.5, function()
+        if self.plugin.ui and self.plugin.ui.document then
+            self.plugin.ui:handleEvent(Event:new("RedrawCurrentView"))
+        end
+    end)
+
     self.auto_sync:setSkipDownload(false)
 end
 

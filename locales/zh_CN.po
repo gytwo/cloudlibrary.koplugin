@@ -1228,3 +1228,24 @@ msgstr "Gitee（最新版）"
 
 msgid "No pre-release found"
 msgstr "未找到预发布版本"
+
+msgid "Applying changes - Overwrite..."
+msgstr "正在应用更改-覆盖更新..."
+
+msgid "Applying changes - Merge..."
+msgstr "正在应用更改-合并更新..."
+
+msgid "Downloading and applying metadata - Overwrite..."
+msgstr "正在下载并应用元数据-覆盖更新..."
+
+msgid "Downloading and applying metadata - Merge..."
+msgstr "正在下载并应用元数据-合并更新..."
+
+msgid "✓ Applying successful (Overwrite)"
+msgstr "✓ 应用成功（覆盖更新）"
+
+msgid "✓ Applying successful (Merge)"
+msgstr "✓ 应用成功（合并更新）"
+
+msgid "✗ Merge failed"
+msgstr "✗ 合并失败"

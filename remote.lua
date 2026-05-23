@@ -919,4 +919,69 @@ function M.download_book_merge_before_open(book, naming_mode)
     return false, ERROR_TYPES.UNKNOWN_ERROR
 end
 
+-- Download metadata to temp directory without closing current book
+function M.download_to_temp(book, naming_mode, progress_callback)
+    local server = M.get_server()
+    if not server then
+        return nil, nil, ERROR_TYPES.NO_SERVER_CONFIG
+    end
+
+    local NetworkMgr = require("ui/network/manager")
+    if not NetworkMgr:isOnline() then
+        return nil, nil, ERROR_TYPES.NO_NETWORK
+    end
+
+    local api = M.get_api(server)
+    if not api then
+        return nil, nil, ERROR_TYPES.UNSUPPORTED_SERVER
+    end
+
+    if not M.ensure_download_dir() then
+        return nil, nil, "download_dir_create_failed"
+    end
+
+    local cloud_filename = M.get_cloud_filename(book, naming_mode)
+
+    local cloud_path
+    if server.type == "dropbox" then
+        local url_base = server.url:sub(-1) == "/" and server.url or server.url.."/"
+        cloud_path = url_base .. cloud_filename
+    else
+        cloud_path = api:getJoinedPath(server.address, server.url)
+        cloud_path = api:getJoinedPath(cloud_path, cloud_filename)
+    end
+
+    local downloaded_file = DOWNLOAD_DIR .. cloud_filename
+    local code
+
+    if server.type == "dropbox" then
+        local token = server.password
+        if server.address and server.address ~= "" then
+            token = api:getAccessToken(server.password, server.address)
+        end
+        code = api:downloadFile(cloud_path, token, downloaded_file, progress_callback)
+    else
+        code = api:downloadFile(cloud_path, server.username, server.password, downloaded_file, progress_callback)
+    end
+
+    if type(code) ~= "number" or code ~= 200 then
+        if lfs.attributes(downloaded_file, "mode") then
+            os.remove(downloaded_file)
+        end
+        if type(code) == "number" and code == 404 then
+            return nil, nil, ERROR_TYPES.CLOUD_FILE_NOT_FOUND
+        end
+        if type(code) == "number" and code == 401 then
+            return nil, nil, ERROR_TYPES.AUTH_FAILED
+        end
+        return nil, nil, ERROR_TYPES.UNKNOWN_ERROR
+    end
+
+    if not lfs.attributes(downloaded_file, "mode") then
+        return nil, nil, ERROR_TYPES.UNKNOWN_ERROR
+    end
+
+    return downloaded_file, cloud_filename, nil
+end
+
 return M
