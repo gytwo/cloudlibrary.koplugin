@@ -20,7 +20,7 @@ jobs:
       - name: Read version from _meta.lua
         id: meta
         run: |
-          VERSION=$(grep -oP '(?<=version = ")[^"]+' _meta.lua)
+          VERSION=$(grep -oP '(?<=version = ")[^"]+' _meta.lua | sed 's/^v//')
           if [[ -z "$VERSION" ]]; then
             echo "Error: could not extract version from _meta.lua" >&2
             exit 1
@@ -84,5 +84,5 @@ jobs:
           gh release create "$TAG" \
             dist/zen_ui.koplugin.zip \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Zen UI $TAG" \
+            --title "$TAG" \
             --notes-file release_notes.md
