@@ -69,7 +69,7 @@ jobs:
         if: steps.version_check.outputs.skip == 'false'
         run: |
           mkdir -p dist
-          zip -r dist/zen_ui.koplugin.zip . \
+          zip -r dist/cloudlibrary.koplugin.zip . \
             -x "*.git*" \
             -x ".github/*" \
             -x "dist/*" \
@@ -107,7 +107,7 @@ jobs:
         run: |
           TAG="${{ steps.version_check.outputs.tag }}"
           gh release create "$TAG" \
-            dist/zen_ui.koplugin.zip \
+            dist/cloudlibrary.koplugin.zip \
             --repo "$GITHUB_REPOSITORY" \
             --title "$TAG" \
             --notes-file release_notes.md \
