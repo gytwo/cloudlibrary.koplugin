@@ -1,3 +1,21 @@
+-- Get plugin directory
+local src = debug.getinfo(1, "S").source or ""
+local path = (src:sub(1, 1) == "@") and src:sub(2):match("^(.*)/[^/]+$") or nil
+local _plugin_dir
+
+if path then
+    if path:sub(1, 1) ~= "/" then
+        local ok, lfs = pcall(require, "libs/libkoreader-lfs")
+        local cwd = ok and lfs and lfs.currentdir()
+        if cwd then
+            path = cwd .. "/" .. path
+        end
+    end
+    _plugin_dir = path .. "/"
+else
+    _plugin_dir = "./"
+end
+
 local logger = require("logger")
 local lfs = require("libs/libkoreader-lfs")
 local DataStorage = require("datastorage")
@@ -5,7 +23,7 @@ local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 local Notification = require("ui/widget/notification")
 local _ = require("gettext")
-local utils = require("utils")
+local utils = dofile(_plugin_dir .. "utils.lua")
 
 local M = {}
 
