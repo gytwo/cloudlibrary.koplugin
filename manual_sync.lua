@@ -364,7 +364,7 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
 
     -- Show success notification
     UIManager:show(Notification:new{
-        text = _("✓ Applying successful (Overwrite)"),
+        text = _("✓ Applying successful (Merge)"),
         timeout = 2
     })
 
