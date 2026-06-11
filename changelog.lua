@@ -48,6 +48,6 @@ return {
 
 ["1.4.1"] = {
     "Added changelog.lua to track version history",
-    "fix: improve plugin directory detection and module loading",
+    "Optimize plugin module loading path and fix naming conflict with other plugins",
 },
 }

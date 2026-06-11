@@ -119,6 +119,7 @@ cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 versi
 21. Manual and auto sync download modes are no longer shared: Prevents temporary switching of download mode in manual sync from affecting automated sync tasks (v1.4)
 22. Optimized update channel: Added three update sources options - GitHub (Latest), GitHub (Pre-release), Gitee (Latest)  (v1.4)
 23. Added changelog.lua to track version history (v1.4.1)
+24. Optimize plugin module loading path and fix naming conflict with other plugins (v1.4.1)
 
 #### Contributing
 
