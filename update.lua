@@ -1,5 +1,23 @@
 -- update.lua
--- 插件在线更新模块（支持 GitHub Latest、GitHub Pre-release、Gitee Latest）
+-- 插件在线更新模块
+
+-- Get plugin directory (same as other files)
+local src = debug.getinfo(1, "S").source or ""
+local path = (src:sub(1, 1) == "@") and src:sub(2):match("^(.*)/[^/]+$") or nil
+local _plugin_dir
+
+if path then
+    if path:sub(1, 1) ~= "/" then
+        local ok, lfs = pcall(require, "libs/libkoreader-lfs")
+        local cwd = ok and lfs and lfs.currentdir()
+        if cwd then
+            path = cwd .. "/" .. path
+        end
+    end
+    _plugin_dir = path .. "/"
+else
+    _plugin_dir = "./"
+end
 
 local logger = require("logger")
 local UIManager = require("ui/uimanager")
@@ -76,42 +94,8 @@ local function get_source_by_key(key)
     end
 end
 
--- 获取插件目录
-local plugin_dir
-local current_file_path = (...)
-
-if is_android then
-    local data_dir = DataStorage:getDataDir()
-    if data_dir:sub(1, 2) == "./" then
-        data_dir = data_dir:sub(3)
-    elseif data_dir:sub(1, 1) == "." then
-        data_dir = data_dir:sub(2)
-    end
-    if data_dir:sub(-1) ~= "/" then
-        data_dir = data_dir .. "/"
-    end
-    plugin_dir = data_dir .. "plugins/cloudlibrary.koplugin/"
-else
-    plugin_dir = current_file_path:match("(.*/)cloudlibrary.koplugin/")
-    if not plugin_dir then
-        local data_dir = DataStorage:getDataDir()
-        if data_dir:sub(1, 2) == "./" then
-            data_dir = data_dir:sub(3)
-        elseif data_dir:sub(1, 1) == "." then
-            data_dir = data_dir:sub(2)
-        end
-        plugin_dir = data_dir .. "plugins/cloudlibrary.koplugin/"
-    end
-end
-
-if plugin_dir:sub(-1) == "/" then
-    plugin_dir = plugin_dir:sub(1, -2)
-end
-
-logger.info("CloudLibrary: 插件目录: " .. plugin_dir)
-
 local function get_current_version()
-    local meta_path = plugin_dir .. "/_meta.lua"
+    local meta_path = _plugin_dir .. "_meta.lua"
     local f = io.open(meta_path, "r")
     if not f then
         return "v1.0"
@@ -415,17 +399,7 @@ end
 local function download_update(download_url)
     local zip_path
     if is_android then
-        local data_dir = DataStorage:getDataDir()
-        if data_dir:sub(1, 2) == "./" then
-            data_dir = data_dir:sub(3)
-        elseif data_dir:sub(1, 1) == "." then
-            data_dir = data_dir:sub(2)
-        end
-        local plugins_dir = data_dir .. "plugins"
-        zip_path = plugins_dir .. "/cloudlibrary.koplugin.zip"
-        if lfs.attributes(plugins_dir, "mode") ~= "directory" then
-            os.execute("mkdir -p " .. plugins_dir)
-        end
+        zip_path = _plugin_dir .. "cloudlibrary.koplugin.zip"
     else
         zip_path = "/tmp/cloudlibrary.koplugin.zip"
     end
@@ -463,15 +437,17 @@ end
 
 -- 安装更新
 local function install_update(zip_path)
+    local install_dir = _plugin_dir:sub(1, -2)
+    
     if is_android then
-        if lfs.attributes(plugin_dir, "mode") ~= "directory" then
-            os.execute("mkdir -p " .. plugin_dir)
+        if lfs.attributes(install_dir, "mode") ~= "directory" then
+            os.execute("mkdir -p " .. install_dir)
         end
         
-        local result = os.execute(string.format("unzip -o -q '%s' -d '%s' 2>/dev/null", zip_path, plugin_dir))
+        local result = os.execute(string.format("unzip -o -q '%s' -d '%s' 2>/dev/null", zip_path, install_dir))
         
         if result ~= 0 then
-            result = os.execute(string.format("busybox unzip -o -q '%s' -d '%s' 2>/dev/null", zip_path, plugin_dir))
+            result = os.execute(string.format("busybox unzip -o -q '%s' -d '%s' 2>/dev/null", zip_path, install_dir))
         end
         
         os.remove(zip_path)
@@ -484,10 +460,10 @@ local function install_update(zip_path)
             return false
         end
     else
-        local result = os.execute(string.format("unzip -o %s -d %s", zip_path, plugin_dir))
+        local result = os.execute(string.format("unzip -o %s -d %s", zip_path, install_dir))
         
         if result ~= 0 then
-            result = os.execute(string.format("/usr/bin/unzip -o %s -d %s", zip_path, plugin_dir))
+            result = os.execute(string.format("/usr/bin/unzip -o %s -d %s", zip_path, install_dir))
         end
         
         os.remove(zip_path)
