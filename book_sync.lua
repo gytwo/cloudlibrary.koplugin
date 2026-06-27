@@ -29,15 +29,12 @@ local ConfirmBox = require("ui/widget/confirmbox")
 local ButtonDialog = require("ui/widget/buttondialog")
 local Device = require("device")
 local Screen = Device.screen
+local DocumentRegistry = require("document/documentregistry")
+local util = require("util")
 local _ = require("gettext")
 local utils = dofile(_plugin_dir .. "utils.lua")
 
 local M = {}
-
-local BOOK_EXTENSIONS = {
-    ".pdf", ".epub", ".mobi", ".azw", ".azw3", ".kfx",
-    ".cbz", ".cbr", ".fb2", ".djvu", ".docx", ".txt"
-}
 
 local function get_book_server()
     local json = require("json")
@@ -94,9 +91,46 @@ local function sanitize_filename(name)
     return sanitized
 end
 
+-- Returns the document extension as KOReader sees it, preserving compound
+-- extensions such as ".fb2.zip". getProviders() matches the full registered
+-- suffix, so its top provider's extension is "fb2.zip" rather than the bare
+-- "zip" (which is only a low-priority generic fallback). This keeps the
+-- uploaded cloud filename openable as the right format in the title /
+-- title_author naming modes. Falls back to the last dotted component for
+-- anything KOReader doesn't recognize.
 local function get_file_extension(file_path)
+    local providers = DocumentRegistry:getProviders(file_path)
+    if providers and providers[1] and providers[1].extension then
+        return "." .. providers[1].extension
+    end
     local ext = file_path:match("%.([^%.]+)$")
     return ext and ("." .. ext) or ""
+end
+
+-- Removes the extension (as understood by get_file_extension) from a filename,
+-- keeping compound extensions intact so the stem and the extension never
+-- overlap. Using a plain `gsub("%.[^%.]+$", "")` here would only drop the last
+-- component, turning "book.fb2.zip" into the stem "book.fb2" which, recombined
+-- with the compound ext ".fb2.zip", would yield "book.fb2.fb2.zip".
+local function strip_extension(filename)
+    local ext = get_file_extension(filename)
+    if #ext > 0 and filename:sub(-#ext):lower() == ext:lower() then
+        return filename:sub(1, #filename - #ext)
+    end
+    return filename
+end
+
+-- A file is a syncable book if KOReader has a document provider for it.
+-- We use the same test KOReader's own FileManager uses to decide what to show
+-- (hasProvider), instead of a hand-maintained extension allowlist. This
+-- automatically covers every format the reader can open and stays in sync with
+-- it. We then drop the two provider-backed file kinds that are clearly not
+-- books: plain images (covers etc.) and the executable scripts (.sh/.py) that
+-- CRE registers only for in-FileManager execution.
+local function is_supported_book(file_path)
+    return DocumentRegistry:hasProvider(file_path)
+        and not DocumentRegistry:isImageFile(file_path)
+        and util.getScriptType(file_path) == nil
 end
 
 local function get_cloud_path(server, cloud_filename)
@@ -132,7 +166,7 @@ function M.get_cloud_filename_for_path(book, naming_mode)
     
     local title = book.title
     if not title or title == "" then
-        title = original_filename:gsub("%.[^%.]+$", "")
+        title = strip_extension(original_filename)
     end
     return sanitize_filename(title) .. ext
 end
@@ -235,15 +269,7 @@ function M.upload_book(book_path, show_msg, naming_mode, book_info)
         return false, "file_not_found"
     end
     
-    local ext = get_file_extension(book_path):lower()
-    local is_book = false
-    for _, book_ext in ipairs(BOOK_EXTENSIONS) do
-        if ext == book_ext then
-            is_book = true
-            break
-        end
-    end
-    if not is_book then
+    if not is_supported_book(book_path) then
         if show_msg then show_notification(_("Unsupported file format"), 2) end
         return false, "unsupported_format"
     end
@@ -596,21 +622,12 @@ function M.get_cloud_book_list()
     for _, item in ipairs(items) do
         if item.type == "file" then
             local filename = item.text
-            if filename then
-                local ext = filename:match("%.([^%.]+)$")
-                if ext then
-                    ext = "." .. ext:lower()
-                    for _, book_ext in ipairs(BOOK_EXTENSIONS) do
-                        if ext == book_ext then
-                            table.insert(books, {
-                                name = filename,
-                                path = item.url,
-                                size = item.filesize or 0,
-                            })
-                            break
-                        end
-                    end
-                end
+            if filename and is_supported_book(filename) then
+                table.insert(books, {
+                    name = filename,
+                    path = item.url,
+                    size = item.filesize or 0,
+                })
             end
         end
     end
@@ -1321,19 +1338,10 @@ function M.batchUploadWithFMSelection(plugin)
     local books = {}
     for file, selected in pairs(selected_files) do
         if selected and lfs.attributes(file, "mode") == "file" then
-            local ext = get_file_extension(file):lower()
-            local is_book = false
-            for _, book_ext in ipairs(BOOK_EXTENSIONS) do
-                if ext == book_ext then
-                    is_book = true
-                    break
-                end
-            end
-            
-            if is_book then
+            if is_supported_book(file) then
                 local filename = file:match("([^/]+)$") or _("Unknown")
-                local basename = filename:gsub("%.[^%.]+$", "")
-                
+                local basename = strip_extension(filename)
+
                 local props = {}
                 if ui and ui.bookinfo then
                     props = ui.bookinfo:getDocProps(file, nil, true) or {}
