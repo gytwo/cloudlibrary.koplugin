@@ -668,7 +668,23 @@ function M.show_cloud_book_dialog(callback, plugin)
     local update_buttons
     local show_search_dialog
     local clear_search
-    
+    local go_to_page
+
+    -- Turn to another page of the list (clamped). Rebuilds the dialog, as the
+    -- list is paginated by recreating the ButtonDialog. Returns true if the page
+    -- actually changed.
+    go_to_page = function(page)
+        local total_pages = math.ceil(#books / items_per_page)
+        if total_pages < 1 then total_pages = 1 end
+        if page < 1 then page = 1 end
+        if page > total_pages then page = total_pages end
+        if page == current_page then return false end
+        current_page = page
+        if dialog then UIManager:close(dialog) end
+        update_buttons()
+        return true
+    end
+
     refresh_book_list = function()
         if search_keyword == "" then
             books = {}
@@ -742,11 +758,7 @@ function M.show_cloud_book_dialog(callback, plugin)
             table.insert(nav_buttons, {
                 text = _("◀ Previous Page"),
                 callback = function()
-                    current_page = current_page - 1
-                    if dialog then
-                        UIManager:close(dialog)
-                    end
-                    update_buttons()
+                    go_to_page(current_page - 1)
                 end
             })
         end
@@ -758,11 +770,7 @@ function M.show_cloud_book_dialog(callback, plugin)
             table.insert(nav_buttons, {
                 text = _("Next Page ▶"),
                 callback = function()
-                    current_page = current_page + 1
-                    if dialog then
-                        UIManager:close(dialog)
-                    end
-                    update_buttons()
+                    go_to_page(current_page + 1)
                 end
             })
         end
@@ -880,9 +888,29 @@ function M.show_cloud_book_dialog(callback, plugin)
             buttons = buttons,
             width = math.floor(Screen:getWidth() * 0.85),
         }
+
+        -- Non-touch navigation (D-pad devices): in this single-column list the
+        -- horizontal arrows have no in-row neighbour to move to, so they do
+        -- nothing there. Repurpose them to turn pages while the cursor is on a
+        -- list item (a one-button row); on the multi-column nav/action rows they
+        -- keep moving the focus as usual.
+        if Device:hasDPad() then
+            dialog.onFocusMove = function(self, args)
+                local dx = args[1]
+                if dx ~= 0 and self.layout and self.selected then
+                    local row = self.layout[self.selected.y]
+                    if row and #row == 1 then
+                        go_to_page(current_page + (dx > 0 and 1 or -1))
+                        return true
+                    end
+                end
+                return ButtonDialog.onFocusMove(self, args)
+            end
+        end
+
         UIManager:show(dialog)
     end
-    
+
     show_search_dialog = function()
         local InputDialog = require("ui/widget/inputdialog")
         local search_dialog = nil
