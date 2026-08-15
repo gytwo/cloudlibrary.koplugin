@@ -444,9 +444,9 @@ function M.upload_dual_format(server, lua_path, lua_filename, book)
         if f then
             local timestamp = os.date("%Y-%m-%d %H:%M:%S")
             if use_notemark then
-                f:write(string.format("[%s] JSON format uploaded (NoteMarkData): %s\n", timestamp, book.title))
+                f:write(string.format(_("[%s] JSON format uploaded (NoteMarkData): %s\n"), timestamp, book.title))
             else
-                f:write(string.format("[%s] JSON format uploaded: %s\n", timestamp, book.title))
+                f:write(string.format(_("[%s] JSON format uploaded: %s\n"), timestamp, book.title))
             end
             f:close()
         end
