@@ -540,21 +540,26 @@ function ManualSync:doBatchSync(is_upload, is_merge, selected_books)
     local completed = 0
     local index = 1
     
-    -- 直接创建进度条
-    local title = is_upload and _("Uploading metadata...") or _("Downloading metadata...")
-    local progress_dialog = ProgressbarDialog:new{
-        title = title,
-        subtitle = string.format("%d book(s)", total),
-        progress = 0,
+    -- Create progress dialog without cancel button
+    local progress_dialog = DownloadDialog:new{
+        title = is_upload and _("Uploading metadata...") or _("Downloading metadata..."),
+        description = " ",
         progress_max = total,
-        refresh_time_seconds = 0.1
+        buttons = {},
     }
-    if progress_dialog.progress_bar then
-        progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
-    end
     progress_dialog:show()
     
+    -- Get display name: prefer title, fallback to basename, truncate if too long
+    local function get_display_name(book)
+        local name = book.title or book.book_basename or "Unknown"
+        if #name > 60 then
+            name = util.fixUtf8(name:sub(1, 57), "") .. "..."
+        end
+        return name
+    end
+    
     local function process_next()
+        -- All books processed
         if index > total then
             progress_dialog:close()
             
@@ -598,9 +603,14 @@ function ManualSync:doBatchSync(is_upload, is_merge, selected_books)
         end
         
         local book = selected_books[index]
-        index = index + 1
+        local display_name = get_display_name(book)
+        
+        -- Update description: "3/6: Book Name"
+        progress_dialog:setDescription(string.format("%d/%d: %s", index, total, display_name))
+        -- Don't setDirty here, let reportProgress handle it
         
         UIManager:scheduleIn(0, function()
+            -- Check if local metadata file exists
             if not book.metadata or not lfs.attributes(book.metadata, "mode") then
                 table.insert(sync_results.failed, {
                     title = book.title,
@@ -638,9 +648,10 @@ function ManualSync:doBatchSync(is_upload, is_merge, selected_books)
             
             completed = completed + 1
             progress_dialog:reportProgress(completed)
-            UIManager:setDirty(progress_dialog, "ui")
+            -- reportProgress triggers setDirty and forceRePaint internally
             
-            process_next()
+            index = index + 1
+            UIManager:scheduleIn(0, process_next)
         end)
     end
     
