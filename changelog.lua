@@ -58,4 +58,9 @@ return {
     "Added Auto Sync Exclude Directories feature",
     "Optimized gesture registration: merged reader/filemanager paired gestures into unified general gestures",
 },
+["1.4.4"] = {
+    "Added folder navigation to book download/delete dialog for switching cloud directories",
+    "Optimized upload/download/delete progress dialogs with book name and progress counter display",
+    "Improved Chinese translations",
+},
 }
