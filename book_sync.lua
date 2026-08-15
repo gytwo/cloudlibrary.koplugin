@@ -644,12 +644,13 @@ function M.get_cloud_book_list()
     return books, nil
 end
 
-function M.show_cloud_book_dialog(callback, plugin)
+function M.show_cloud_book_dialog(callback, plugin, retry)
     local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isOnline() then
-        show_notification(_("No network connection, cannot get cloud book list"), 3)
+       if NetworkMgr:willRerunWhenOnline(function()
+          M.show_cloud_book_dialog(callback, plugin, true)
+          end) then
         return
-    end
+      end
     
     local server = get_book_server()
     if not server then
@@ -1613,11 +1614,9 @@ end
 
 function M.batchUploadWithFMSelection(plugin)
     local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isOnline() then
-        UIManager:show(Notification:new{
-            text = _("No network connection, cannot upload"),
-            timeout = 3
-        })
+    if not retry and NetworkMgr:willRerunWhenOnline(function()
+        M.batchUploadWithFMSelection(plugin, true)
+    end) then
         return
     end
     
