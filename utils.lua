@@ -166,7 +166,7 @@ local DownloadDialog = InputContainer:extend{
     description = nil,
     progress_max = 100,
     buttons = nil,
-    refresh_time_seconds = 3,
+    refresh_time_seconds = 0.1,
 }
 
 function DownloadDialog:init()
