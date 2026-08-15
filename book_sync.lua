@@ -1491,7 +1491,6 @@ function M.batchDownloadBooks(books, settings, plugin)
             })
             total_downloaded = total_downloaded + file_size
             progress_dialog:reportProgress(total_downloaded)
-            UIManager:setDirty(progress_dialog, "ui")
             index = index + 1
             UIManager:scheduleIn(0, download_next)
             return
@@ -1505,7 +1504,6 @@ function M.batchDownloadBooks(books, settings, plugin)
                 this_book_downloaded = byte_count
                 total_downloaded = total_downloaded + delta
                 progress_dialog:reportProgress(total_downloaded)
-                UIManager:setDirty(progress_dialog, "ui")
             end
         end
         
@@ -1535,7 +1533,6 @@ function M.batchDownloadBooks(books, settings, plugin)
             total_downloaded = total_downloaded + remaining
         end
         progress_dialog:reportProgress(total_downloaded)
-        UIManager:setDirty(progress_dialog, "ui")
         
         -- Move to next book
         index = index + 1
