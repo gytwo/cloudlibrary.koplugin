@@ -839,6 +839,21 @@ msgstr "【失败原因 %d】%s"
 msgid "No books found in cloud"
 msgstr "云端没有找到书籍文件"
 
+msgid "Browse: %s"
+msgstr "浏览：%s"
+
+msgid "Root"
+msgstr "根目录"
+
+msgid "No subfolders"
+msgstr "没有子文件夹"
+
+msgid "Cannot load directory"
+msgstr "无法加载目录"
+
+msgid "No subfolders found"
+msgstr "未找到子文件夹"
+
 msgid "Search: \"%s\" (%d books found)"
 msgstr "搜索: \"%s\" (找到 %d 本)"
 
@@ -1288,3 +1303,12 @@ msgstr "✓ 应用成功（合并更新）"
 
 msgid "✗ Merge failed"
 msgstr "✗ 合并失败"
+
+msgid "[%s] JSON format uploaded (NoteMarkData): %s\n"
+msgstr "[%s] JSON 格式已上传 (NoteMarkData)：%s\n"
+
+msgid "[%s] JSON format uploaded: %s\n"
+msgstr "[%s] JSON 格式已上传：%s\n"
+
+msgid "Last sync: %s\n(%s)"
+msgstr "上次同步：%s\n(%s)"
