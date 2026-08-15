@@ -618,7 +618,7 @@ local function do_check_updates(source)
     show_msg(gettext("Checking for updates..."), 1)
     
     UIManager:scheduleIn(0.5, function()
-        local latest_version, download_url, source_used, err = get_latest_version_from_source(source)
+        local latest_version, download_url, source_used, notes, err = get_latest_version_from_source(source)
         
         if not latest_version then
             show_msg(err or gettext("Check for updates failed"), 3)
@@ -631,12 +631,16 @@ local function do_check_updates(source)
             local source_text = " (" .. source_used .. ")"
         local message = string.format(gettext("New version found: %s%s\nCurrent version: %s"), 
             latest_version, source_text, current_version)
-    
-        -- 读取 changelog
-        local version_key = latest_version:gsub("^v", "")
-        local changelog_text = get_changelog_for_version(version_key)
-        if changelog_text then
-            message = message .. "\n\n" .. gettext("What's new:") .. "\n" .. changelog_text
+
+        -- 直接用 GitHub release body
+        if notes and notes ~= "" then
+            local clean_notes = notes:gsub("^#+%s*", ""):gsub("\n#+%s*", "\n")
+            clean_notes = clean_notes:gsub("%*%*(.-)%*%*", "%1")
+            clean_notes = clean_notes:gsub("`(.-)`", "%1")
+            if #clean_notes > 1600 then
+                clean_notes = util.fixUtf8(clean_notes:sub(1, 1597), "") .. "..."
+            end
+            message = message .. "\n\n" .. clean_notes
         end
     
         message = message .. "\n\n" .. gettext("Download and install update?")
