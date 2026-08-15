@@ -27,6 +27,7 @@ local Event = require("ui/event")
 local utils = dofile(_plugin_dir .. "utils.lua")  
 local ProgressbarDialog = require("ui/widget/progressbardialog")
 local blitbuffer = require("ffi/blitbuffer") 
+local DownloadDialog = utils.DownloadDialog
 
 local ManualSync = {}
 
