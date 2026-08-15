@@ -34,6 +34,7 @@ local DocumentRegistry = require("document/documentregistry")
 local util = require("util")
 local _ = require("gettext")
 local utils = dofile(_plugin_dir .. "utils.lua")
+local DownloadDialog = utils.DownloadDialog
 
 local M = {}
 
@@ -1409,23 +1410,41 @@ function M.batchDownloadBooks(books, settings, plugin)
     
     local index = 1
     local total_downloaded = 0
+    local total_books = #books
+    local cancelling = false
     
-    local ProgressbarDialog = require("ui/widget/progressbardialog")
-    local blitbuffer = require("ffi/blitbuffer")
-    local progress_dialog = ProgressbarDialog:new{
+    local progress_dialog = DownloadDialog:new{
         title = _("Downloading books..."),
-        subtitle = string.format("%d book(s)", #books),
-        progress = 0,
+        description = " ",  -- 非空，确保 description_widget 被创建
         progress_max = total_bytes,
-        refresh_time_seconds = 0.1
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        cancelling = true
+                        UIManager:close(progress_dialog)
+                    end,
+                },
+            },
+        },
     }
-    if progress_dialog.progress_bar then
-        progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
-    end
     progress_dialog:show()
     
+    local function get_display_name(book)
+        local name = book.title or book.name
+        if #name > 60 then
+            name = util.fixUtf8(name:sub(1, 57), "") .. "..."
+        end
+        return name
+    end
+    
     local function download_next()
-        if index > #books then
+        if cancelling then
+            return
+        end
+        
+        if index > total_books then
             progress_dialog:close()
             M.write_batch_book_log(results, "download")
             settings.last_sync = os.date("%Y-%m-%d %H:%M:%S") .. " (" .. _("Book sync") .. "-" .. _("Batch download") .. ")"
@@ -1455,6 +1474,10 @@ function M.batchDownloadBooks(books, settings, plugin)
         local file_size = tonumber(book.size) or 0
         local local_path = download_dir .. "/" .. filename
         
+        local display_name = get_display_name(book)
+        progress_dialog:setDescription(string.format("%d/%d: %s", index, total_books, display_name))
+        UIManager:setDirty(progress_dialog, "ui")
+        
         if lfs.attributes(local_path, "mode") == "file" then
             table.insert(results.skipped, {
                 name = filename,
@@ -1470,6 +1493,9 @@ function M.batchDownloadBooks(books, settings, plugin)
         
         local this_book_downloaded = 0
         local progress_callback = function(byte_count)
+            if cancelling then
+                return
+            end
             byte_count = tonumber(byte_count) or 0
             local delta = byte_count - this_book_downloaded
             if delta > 0 then
@@ -1481,6 +1507,14 @@ function M.batchDownloadBooks(books, settings, plugin)
         end
         
         local success, error_msg, _ = M.download_book(filename, nil, false, progress_callback)
+        
+        if cancelling then
+            -- 删除不完整的文件
+            if lfs.attributes(local_path, "mode") == "file" then
+                os.remove(local_path)
+            end
+            return
+        end
         
         if success then
             table.insert(results.success, {
