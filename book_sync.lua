@@ -506,6 +506,9 @@ function M.delete_cloud_book(cloud_filename, show_msg)
     end
 end
 
+-- ============================================================
+-- Batch delete books
+-- ============================================================
 function M.batch_delete_books(book_names, settings)
     local results = {
         success = {},
@@ -516,20 +519,21 @@ function M.batch_delete_books(book_names, settings)
     local completed = 0
     local index = 1
     
-    local ProgressbarDialog = require("ui/widget/progressbardialog")
-    local blitbuffer = require("ffi/blitbuffer")
-    local progress_dialog = ProgressbarDialog:new{
+    local progress_dialog = DownloadDialog:new{
         title = _("Deleting books..."),
-        subtitle = string.format("%d book(s)", total),
-        progress = 0,
+        description = " ",
         progress_max = total,
-        refresh_time_seconds = 0.1
+        buttons = {},
     }
-    if progress_dialog.progress_bar then
-        progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
-    end
     progress_dialog:show()
     
+    local function get_display_name(filename)
+        local name = filename
+        if #name > 60 then
+            name = util.fixUtf8(name:sub(1, 57), "") .. "..."
+        end
+        return name
+    end
     
     local function delete_next()
         if index > total then
@@ -558,7 +562,9 @@ function M.batch_delete_books(book_names, settings)
         end
         
         local filename = book_names[index]
-        index = index + 1
+        local display_name = get_display_name(filename)
+        progress_dialog:setDescription(string.format("%d/%d: %s", index, total, display_name))
+        UIManager:setDirty(progress_dialog, "ui")
         
         UIManager:scheduleIn(0, function()
             local success, error_msg = M.delete_cloud_book(filename, false)
@@ -572,7 +578,8 @@ function M.batch_delete_books(book_names, settings)
             completed = completed + 1
             progress_dialog:reportProgress(completed)
             UIManager:setDirty(progress_dialog, "ui")
-            delete_next()
+            index = index + 1
+            UIManager:scheduleIn(0, delete_next)
         end)
     end
     
@@ -1293,6 +1300,9 @@ function M.show_cloud_book_dialog(callback, plugin)
     load_books(server.url)
 end
 
+-- ============================================================
+-- Batch upload books
+-- ============================================================
 function M.batchUploadBooks(selected_books, naming_mode, settings, plugin)
     local results = {
         success = {},
@@ -1303,20 +1313,21 @@ function M.batchUploadBooks(selected_books, naming_mode, settings, plugin)
     local completed = 0
     local index = 1
     
-    local ProgressbarDialog = require("ui/widget/progressbardialog")
-    local blitbuffer = require("ffi/blitbuffer")
-    local progress_dialog = ProgressbarDialog:new{
+    local progress_dialog = DownloadDialog:new{
         title = _("Uploading books..."),
-        subtitle = string.format("%d book(s)", total),
-        progress = 0,
+        description = " ",
         progress_max = total,
-        refresh_time_seconds = 0.1
+        buttons = {},
     }
-    if progress_dialog.progress_bar then
-        progress_dialog.progress_bar.fillcolor = blitbuffer.COLOR_BLACK
-    end
     progress_dialog:show()
-   
+    
+    local function get_display_name(book)
+        local name = book.title or book.name
+        if #name > 60 then
+            name = util.fixUtf8(name:sub(1, 57), "") .. "..."
+        end
+        return name
+    end
     
     local function upload_next()
         if index > total then
@@ -1344,7 +1355,9 @@ function M.batchUploadBooks(selected_books, naming_mode, settings, plugin)
         end
         
         local book_info = selected_books[index]
-        index = index + 1
+        local display_name = get_display_name(book_info)
+        progress_dialog:setDescription(string.format("%d/%d: %s", index, total, display_name))
+        UIManager:setDirty(progress_dialog, "ui")
         
         local path = book_info.path or book_info.file_path
         local local_name = path:match("([^/]+)$") or _("Unknown")
@@ -1378,7 +1391,8 @@ function M.batchUploadBooks(selected_books, naming_mode, settings, plugin)
             completed = completed + 1
             progress_dialog:reportProgress(completed)
             UIManager:setDirty(progress_dialog, "ui")
-            upload_next()
+            index = index + 1
+            UIManager:scheduleIn(0, upload_next)
         end)
     end
     
@@ -1403,6 +1417,7 @@ function M.batchDownloadBooks(books, settings, plugin)
         return
     end
     
+    -- Calculate total bytes for progress bar
     local total_bytes = 0
     for _, book in ipairs(books) do
         total_bytes = total_bytes + (tonumber(book.size) or 0)
@@ -1411,26 +1426,17 @@ function M.batchDownloadBooks(books, settings, plugin)
     local index = 1
     local total_downloaded = 0
     local total_books = #books
-    local cancelling = false
     
+    -- Create progress dialog without cancel button
     local progress_dialog = DownloadDialog:new{
         title = _("Downloading books..."),
-        description = " ",  -- 非空，确保 description_widget 被创建
+        description = " ",  -- Non-empty to ensure description_widget is created
         progress_max = total_bytes,
-        buttons = {
-            {
-                {
-                    text = _("Cancel"),
-                    callback = function()
-                        cancelling = true
-                        UIManager:close(progress_dialog)
-                    end,
-                },
-            },
-        },
+        buttons = {},
     }
     progress_dialog:show()
     
+    -- Get display name: prefer title, fallback to filename, truncate if too long
     local function get_display_name(book)
         local name = book.title or book.name
         if #name > 60 then
@@ -1440,10 +1446,7 @@ function M.batchDownloadBooks(books, settings, plugin)
     end
     
     local function download_next()
-        if cancelling then
-            return
-        end
-        
+        -- All books downloaded
         if index > total_books then
             progress_dialog:close()
             M.write_batch_book_log(results, "download")
@@ -1474,10 +1477,12 @@ function M.batchDownloadBooks(books, settings, plugin)
         local file_size = tonumber(book.size) or 0
         local local_path = download_dir .. "/" .. filename
         
+        -- Update progress description: "3/6: Book Name"
         local display_name = get_display_name(book)
         progress_dialog:setDescription(string.format("%d/%d: %s", index, total_books, display_name))
         UIManager:setDirty(progress_dialog, "ui")
         
+        -- Skip if file already exists locally
         if lfs.attributes(local_path, "mode") == "file" then
             table.insert(results.skipped, {
                 name = filename,
@@ -1493,9 +1498,6 @@ function M.batchDownloadBooks(books, settings, plugin)
         
         local this_book_downloaded = 0
         local progress_callback = function(byte_count)
-            if cancelling then
-                return
-            end
             byte_count = tonumber(byte_count) or 0
             local delta = byte_count - this_book_downloaded
             if delta > 0 then
@@ -1506,15 +1508,8 @@ function M.batchDownloadBooks(books, settings, plugin)
             end
         end
         
+        -- Download the current book (synchronous, blocks until complete)
         local success, error_msg, _ = M.download_book(filename, nil, false, progress_callback)
-        
-        if cancelling then
-            -- 删除不完整的文件
-            if lfs.attributes(local_path, "mode") == "file" then
-                os.remove(local_path)
-            end
-            return
-        end
         
         if success then
             table.insert(results.success, {
@@ -1533,12 +1528,15 @@ function M.batchDownloadBooks(books, settings, plugin)
             })
         end
         
+        -- Ensure progress bar reaches 100% for the current book
         local remaining = file_size - this_book_downloaded
         if remaining > 0 then
             total_downloaded = total_downloaded + remaining
         end
         progress_dialog:reportProgress(total_downloaded)
         UIManager:setDirty(progress_dialog, "ui")
+        
+        -- Move to next book
         index = index + 1
         UIManager:scheduleIn(0, download_next)
     end
