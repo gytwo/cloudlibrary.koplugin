@@ -765,6 +765,14 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
     -- being handled, so a checkbox callback can tell key activation from a
     -- touch/mouse tap (which must never advance the cursor or paginate).
     local from_key_press = false
+    -- Layout row of the first book. Rows without buttons are separators and do
+    -- not reach the focus layout (ButtonTable only adds a row when column_cnt >
+    -- 0), so the count is the directory navigation row, plus the search summary
+    -- row when a search is active. Everything that places the cursor asks here,
+    -- so a row added above the list only has to be counted once.
+    local function first_book_row()
+        return search_keyword ~= "" and 3 or 2
+    end
     
     local function load_books(path)
         current_path = path
@@ -892,7 +900,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         if page == current_page then return false end
         current_page = page
         -- put the cursor on the first book row of the new page
-        keep_focus = { x = 1, y = (search_keyword ~= "" and 2 or 1) }
+        keep_focus = { x = 1, y = first_book_row() }
         update_buttons()
         return true
     end
@@ -1032,7 +1040,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
                                 -- (even on a hybrid device, even on the already
                                 -- focused row) just toggles the checkbox.
                                 if from_key_press then
-                                    local first_book_y = (search_keyword ~= "" and 2 or 1)
+                                    local first_book_y = first_book_row()
                                     local this_y = first_book_y + (i - start_idx)
                                     local last_book_y = first_book_y + (end_idx - start_idx)
                                     local total_pages = math.ceil(#books / items_per_page)
@@ -1183,7 +1191,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         local title_text = string.format(_("Select books to download/delete (%d selected)"), selected_count)
         -- Where the cursor should land after (re)building: an explicit
         -- keep_focus set by a toggle / page turn, otherwise the first book row.
-        local target_focus = keep_focus or { x = 1, y = (search_keyword ~= "" and 2 or 1) }
+        local target_focus = keep_focus or { x = 1, y = first_book_row() }
         keep_focus = nil
 
         if dialog then
