@@ -28,6 +28,7 @@ local NetworkMgr = require("ui/network/manager")
 local DataStorage = require("datastorage")
 local lfs = require("libs/libkoreader-lfs")
 local gettext = require("gettext")
+local util = require("util")
 
 local M = {}
 
@@ -589,6 +590,24 @@ local function show_source_selection_dialog(on_selected)
     UIManager:show(dialog)
 end
 
+-- Read changelog for a specific version
+local function get_changelog_for_version(version)
+    local changelog_path = _plugin_dir .. "changelog.lua"
+    local ok, changelog = pcall(dofile, changelog_path)
+    if not ok or not changelog then
+        return nil
+    end
+    local notes = changelog[version]
+    if not notes or #notes == 0 then
+        return nil
+    end
+    local text = "• " .. table.concat(notes, "\n• ")
+    if #text > 1600 then
+        text = util.fixUtf8(text:sub(1, 1597), "") .. "..."
+    end
+    return text
+end
+
 -- 执行更新检查
 local function do_check_updates(source)
     if not NetworkMgr:isOnline() then
@@ -610,16 +629,26 @@ local function do_check_updates(source)
         
         if M.is_newer_version(current_version, latest_version) then
             local source_text = " (" .. source_used .. ")"
-            local message = string.format(gettext("New version found: %s%s\nCurrent version: %s\n\nDownload and install update?"), latest_version, source_text, current_version)
-            
-            UIManager:show(ConfirmBox:new{
-                text = message,
-                ok_text = gettext("Update"),
-                cancel_text = gettext("Later"),
-                ok_callback = function()
-                    M.perform_update(download_url, latest_version, source)
-                end
-            })
+        local message = string.format(gettext("New version found: %s%s\nCurrent version: %s"), 
+            latest_version, source_text, current_version)
+    
+        -- 读取 changelog
+        local version_key = latest_version:gsub("^v", "")
+        local changelog_text = get_changelog_for_version(version_key)
+        if changelog_text then
+            message = message .. "\n\n" .. gettext("What's new:") .. "\n" .. changelog_text
+        end
+    
+        message = message .. "\n\n" .. gettext("Download and install update?")
+    
+        UIManager:show(ConfirmBox:new{
+            text = message,
+            ok_text = gettext("Update"),
+            cancel_text = gettext("Later"),
+            ok_callback = function()
+                M.perform_update(download_url, latest_version, source)
+            end
+        })
         else
             UIManager:show(ConfirmBox:new{
                 text = string.format(gettext("Current version is up to date (%s)\n\nDowngrade to a previous version?"), current_version),
