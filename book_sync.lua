@@ -643,8 +643,7 @@ function M.show_cloud_book_dialog(callback, plugin)
         return
     end
     
-    local remote = dofile(_plugin_dir .. "remote.lua")
-    local server = remote.get_server()
+    local server = get_book_server()
     if not server then
         show_notification(_("Cloud storage service not configured, please configure in settings first"), 3)
         return
@@ -655,32 +654,94 @@ function M.show_cloud_book_dialog(callback, plugin)
         return
     end
     
-    local api = remote.get_api(server)
+    local api = get_api(server)
     if not api then
         show_notification(_("Unsupported cloud storage type, please use WebDAV or Dropbox"), 3)
         return
     end
 
-    local books, err = M.get_cloud_book_list()
-    if not books or #books == 0 then
-        show_notification(err or _("No books found in cloud"), 3)
-        return
+    -- ===== Read settings =====
+    local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
+    
+    -- ===== Current path =====
+    local current_path = server.url
+    local browse_history = {}  -- for going back to parent
+    local root_path = "/"      -- cloud storage root
+    
+    -- ===== Get parent directory =====
+    local function get_parent_path(path)
+        if path == "/" or path == "" then
+            return nil
+        end
+        local trimmed = path:gsub("/$", "")
+        local parent = trimmed:match("^(.*)/")
+        if parent == "" then
+            parent = "/"
+        end
+        return parent
     end
     
+    -- ===== Fetch path content (including folders) =====
+    local function fetch_path_content(path)
+        local items
+        if server.type == "dropbox" then
+            local token = server.password
+            if server.address and server.address ~= "" then
+                token = api:getAccessToken(server.password, server.address)
+            end
+            items = api:listFolder(path, token, true)
+        elseif server.type == "webdav" then
+            items = api:listFolder(server.address, server.username, server.password, path, true)
+        else
+            return nil, _("Unsupported cloud storage type")
+        end
+        
+        if not items or type(items) ~= "table" then
+            return nil, _("Cannot get cloud file list")
+        end
+        
+        local folders = {}
+        local books = {}
+        
+        for _, item in ipairs(items) do
+            -- Skip "Long-press to choose current folder" special entry
+            if item.type == "folder_long_press" then
+                goto continue
+            end
+            
+            if item.type == "folder" then
+                local name = item.text:gsub("/$", "")
+                if name ~= "" then
+                    table.insert(folders, {
+                        name = name,
+                        path = item.url,
+                    })
+                end
+            elseif item.type == "file" then
+                local filename = item.text
+                if filename and is_supported_book(filename) then
+                    table.insert(books, {
+                        name = filename,
+                        path = item.url,
+                        size = item.filesize or 0,
+                    })
+                end
+            end
+            ::continue::
+        end
+        
+        return {
+            folders = folders,
+            books = books,
+        }, nil
+    end
+    
+    -- ===== Load books list =====
     local original_books = {}
-    for i, book in ipairs(books) do
-        table.insert(original_books, book)
-    end
-    
     local search_keyword = ""
     local items_per_page = 10
     local current_page = 1
-    
     local selected = {}
-    for _, book in ipairs(original_books) do
-        selected[book.name] = false
-    end
-    
     local dialog
     local refresh_book_list
     local update_buttons
@@ -695,7 +756,122 @@ function M.show_cloud_book_dialog(callback, plugin)
     -- being handled, so a checkbox callback can tell key activation from a
     -- touch/mouse tap (which must never advance the cursor or paginate).
     local from_key_press = false
-
+    
+    local function load_books(path)
+        current_path = path
+        local result, err = fetch_path_content(path)
+        if not result then
+            show_notification(err or _("Cannot load directory"), 3)
+            return false
+        end
+        
+        -- Update config when switching directory
+        settings.book_cloud_dir = current_path
+        settings.book_cloud_type = server.type
+        settings.book_cloud_address = server.address
+        settings.book_cloud_username = server.username
+        settings.book_cloud_password = server.password
+        G_reader_settings:saveSetting("cloud_library_plugin", settings)
+        -- Update server.url so delete_cloud_book uses the new path
+        server.url = current_path
+        
+        original_books = result.books or {}
+        for _, book in ipairs(original_books) do
+            selected[book.name] = false
+        end
+        
+        refresh_book_list()
+        update_buttons()
+        return true
+    end
+    
+    -- ===== Directory browser =====
+    local browse_dialog = nil
+    
+    local function show_browser()
+        local result, err = fetch_path_content(current_path)
+        if not result then
+            show_notification(err or _("Cannot load directory"), 3)
+            return
+        end
+        
+        local folders = result.folders or {}
+        local folder_buttons = {}
+        
+        -- Parent directory
+        if #browse_history > 0 then
+            table.insert(folder_buttons, {
+                {
+                    text = "..",
+                    callback = function()
+                        local parent = table.remove(browse_history)
+                        current_path = parent
+                        if browse_dialog then
+                            UIManager:close(browse_dialog)
+                            browse_dialog = nil
+                        end
+                        load_books(current_path)
+                    end
+                }
+            })
+        end
+        
+        -- Subfolder list
+        if #folders == 0 then
+            table.insert(folder_buttons, {
+                {
+                    text = _("No subfolders"),
+                    enabled = false,
+                }
+            })
+        else
+            for _, folder in ipairs(folders) do
+                table.insert(folder_buttons, {
+                    {
+                        text = folder.name .. "/",
+                        callback = function()
+                            if browse_dialog then
+                                UIManager:close(browse_dialog)
+                                browse_dialog = nil
+                            end
+                            table.insert(browse_history, current_path)
+                            current_path = folder.path
+                            load_books(current_path)
+                        end
+                    }
+                })
+            end
+        end
+        
+        table.insert(folder_buttons, {})
+        
+        -- Cancel
+        table.insert(folder_buttons, {
+            {
+                text = _("Cancel"),
+                callback = function()
+                    if browse_dialog then
+                        UIManager:close(browse_dialog)
+                        browse_dialog = nil
+                    end
+                end
+            }
+        })
+        
+        local display_path = current_path
+        if #display_path > 40 then
+            display_path = "..." .. display_path:sub(-37)
+        end
+        
+        browse_dialog = ButtonDialog:new{
+            title = string.format(_("Browse: %s"), display_path),
+            title_align = "center",
+            buttons = folder_buttons,
+            width = math.floor(Screen:getWidth() * 0.7),
+        }
+        UIManager:show(browse_dialog)
+    end
+    
     -- Turn to another page of the list (clamped). Rebuilds the dialog, as the
     -- list is paginated by recreating the ButtonDialog. Returns true if the page
     -- actually changed.
@@ -740,6 +916,70 @@ function M.show_cloud_book_dialog(callback, plugin)
         
         local buttons = {}
         
+        -- ===== Navigation bar =====
+        local display_path = current_path
+        if #display_path > 20 then
+            display_path = "..." .. display_path:sub(-17)
+        end
+        
+        local nav_buttons = {}
+        
+        -- Left: current directory (click to open browser)
+        table.insert(nav_buttons, {
+            text = display_path,
+            callback = function()
+                browse_history = {}
+                show_browser()
+            end
+        })
+        
+        -- Middle: parent directory (display path name)
+        local parent_path = get_parent_path(current_path)
+        if parent_path then
+            local parent_display = parent_path
+            if #parent_display > 15 then
+                parent_display = "..." .. parent_display:sub(-12)
+            end
+            table.insert(nav_buttons, {
+                text = parent_display,
+                callback = function()
+                    if browse_dialog then
+                        UIManager:close(browse_dialog)
+                        browse_dialog = nil
+                    end
+                    table.insert(browse_history, current_path)
+                    current_path = parent_path
+                    load_books(current_path)
+                end
+            })
+        else
+            table.insert(nav_buttons, {
+                text = "",
+                enabled = false,
+            })
+        end
+        
+        -- Right: root directory
+        if current_path ~= root_path then
+            table.insert(nav_buttons, {
+                text = _("Root"),
+                callback = function()
+                    current_path = root_path
+                    browse_history = {}
+                    load_books(current_path)
+                end
+            })
+        else
+            table.insert(nav_buttons, {
+                text = _("Root"),
+                enabled = false,
+            })
+        end
+        
+        table.insert(buttons, nav_buttons)
+        table.insert(buttons, {})
+        
+        -- ===== Search results display =====
         if search_keyword ~= "" then
             table.insert(buttons, {
                 {
@@ -750,49 +990,7 @@ function M.show_cloud_book_dialog(callback, plugin)
             table.insert(buttons, {})
         end
         
-        for i = start_idx, end_idx do
-            local book = books[i]
-            local size_mb = string.format("%.2f MB", (book.size or 0) / (1024 * 1024))
-            local check = selected[book.name] and "✓ " or "  "
-            table.insert(buttons, {
-                {
-                    text = check .. book.name .. " (" .. size_mb .. ")",
-                    callback = function()
-                        selected[book.name] = not selected[book.name]
-                        if dialog then
-                            -- Advance the cursor downward so serial checking
-                            -- flows: to the next book on the page; if the last
-                            -- book of a non-final page was toggled, to the first
-                            -- book of the next page; on the very last book of the
-                            -- last page, stay put. Book rows are located by index
-                            -- (start_idx/end_idx, plus the optional search summary
-                            -- row) so the cursor never lands on the non-actionable
-                            -- "Page x/y" row.
-                            -- Gated on from_key_press: only a hardware-key
-                            -- activation advances/paginates. A touch/mouse tap
-                            -- (even on a hybrid device, even on the already
-                            -- focused row) just toggles the checkbox.
-                            if from_key_press then
-                                local first_book_y = (search_keyword ~= "" and 2 or 1)
-                                local this_y = first_book_y + (i - start_idx)
-                                local last_book_y = first_book_y + (end_idx - start_idx)
-                                local total_pages = math.ceil(#books / items_per_page)
-                                if this_y < last_book_y then
-                                    keep_focus = { x = 1, y = this_y + 1 }
-                                elseif current_page < total_pages then
-                                    current_page = current_page + 1
-                                    keep_focus = { x = 1, y = first_book_y }
-                                else
-                                    keep_focus = { x = 1, y = this_y }
-                                end
-                            end
-                            update_buttons()
-                        end
-                    end,
-                }
-            })
-        end
-        
+        -- ===== Book list =====
         if #books == 0 then
             table.insert(buttons, {
                 {
@@ -801,35 +999,80 @@ function M.show_cloud_book_dialog(callback, plugin)
                     alignment = "center",
                 }
             })
+        else
+            for i = start_idx, end_idx do
+                local book = books[i]
+                local size_mb = string.format("%.2f MB", (book.size or 0) / (1024 * 1024))
+                local check = selected[book.name] and "✓ " or "  "
+                table.insert(buttons, {
+                    {
+                        text = check .. book.name .. " (" .. size_mb .. ")",
+                        callback = function()
+                            selected[book.name] = not selected[book.name]
+                            if dialog then
+                                -- Advance the cursor downward so serial checking
+                                -- flows: to the next book on the page; if the last
+                                -- book of a non-final page was toggled, to the first
+                                -- book of the next page; on the very last book of the
+                                -- last page, stay put. Book rows are located by index
+                                -- (start_idx/end_idx, plus the optional search summary
+                                -- row) so the cursor never lands on the non-actionable
+                                -- "Page x/y" row.
+                                -- Gated on from_key_press: only a hardware-key
+                                -- activation advances/paginates. A touch/mouse tap
+                                -- (even on a hybrid device, even on the already
+                                -- focused row) just toggles the checkbox.
+                                if from_key_press then
+                                    local first_book_y = (search_keyword ~= "" and 2 or 1)
+                                    local this_y = first_book_y + (i - start_idx)
+                                    local last_book_y = first_book_y + (end_idx - start_idx)
+                                    local total_pages = math.ceil(#books / items_per_page)
+                                    if this_y < last_book_y then
+                                        keep_focus = { x = 1, y = this_y + 1 }
+                                    elseif current_page < total_pages then
+                                        current_page = current_page + 1
+                                        keep_focus = { x = 1, y = first_book_y }
+                                    else
+                                        keep_focus = { x = 1, y = this_y }
+                                    end
+                                end
+                                update_buttons()
+                            end
+                        end,
+                    }
+                })
+            end
         end
         
         table.insert(buttons, {})
         
-        local nav_buttons = {}
+        -- ===== Page navigation =====
+        local page_buttons = {}
         if current_page > 1 then
-            table.insert(nav_buttons, {
+            table.insert(page_buttons, {
                 text = _("◀ Previous Page"),
                 callback = function()
                     go_to_page(current_page - 1)
                 end
             })
         end
-        table.insert(nav_buttons, {
+        table.insert(page_buttons, {
             text = string.format(_("Page %d/%d (%d books)"), current_page, total_pages, #books),
             enabled = false,
         })
         if current_page < total_pages then
-            table.insert(nav_buttons, {
+            table.insert(page_buttons, {
                 text = _("Next Page ▶"),
                 callback = function()
                     go_to_page(current_page + 1)
                 end
             })
         end
-        table.insert(buttons, nav_buttons)
+        table.insert(buttons, page_buttons)
         
         table.insert(buttons, {})
         
+        -- ===== Action buttons =====
         local selected_count = 0
         for _, book in ipairs(original_books) do
             if selected[book.name] then
@@ -899,25 +1142,25 @@ function M.show_cloud_book_dialog(callback, plugin)
                     end
                 end
             },
-{
-    text = string.format(_("Download (%d)"), selected_count),
-    callback = function()
-        local picked_books = {}
-        for _, book in ipairs(original_books) do
-            if selected[book.name] then
-                table.insert(picked_books, book)
-            end
-        end
-        if dialog then
-            UIManager:close(dialog)
-        end
-        if #picked_books > 0 then
-            callback(picked_books)
-        else
-            show_notification(_("No books selected"), 2)
-        end
-    end
-},
+            {
+                text = string.format(_("Download (%d)"), selected_count),
+                callback = function()
+                    local picked_books = {}
+                    for _, book in ipairs(original_books) do
+                        if selected[book.name] then
+                            table.insert(picked_books, book)
+                        end
+                    end
+                    if dialog then
+                        UIManager:close(dialog)
+                    end
+                    if #picked_books > 0 then
+                        callback(picked_books)
+                    else
+                        show_notification(_("No books selected"), 2)
+                    end
+                end
+            },
             {
                 text = _("Cancel"),
                 callback = function()
@@ -949,7 +1192,7 @@ function M.show_cloud_book_dialog(callback, plugin)
     
         -- Create new dialog
         dialog = ButtonDialog:new{
-           title = title_text,
+            title = title_text,
             title_align = "center",
             buttons = buttons,
             width = math.floor(Screen:getWidth() * 0.85),
@@ -1045,8 +1288,8 @@ function M.show_cloud_book_dialog(callback, plugin)
         end
     end
     
-    refresh_book_list()
-    update_buttons()
+    -- Initial load
+    load_books(server.url)
 end
 
 function M.batchUploadBooks(selected_books, naming_mode, settings, plugin)
