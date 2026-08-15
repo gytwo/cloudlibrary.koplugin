@@ -161,12 +161,15 @@ M.SEPARATOR_LINE = string.rep("=", 30)
 -- DownloadDialog - Progress dialog with cancel button
 -- ============================================================
 
+-- Non-touch Kindles paint slowly: one bar update a second is enough there.
+local slow_paint = Device:isKindle() and not Device:isTouchDevice()
+
 local DownloadDialog = InputContainer:extend{
     title = "",
     description = nil,
     progress_max = 100,
     buttons = nil,
-    refresh_time_seconds = 0.1,
+    refresh_time_seconds = slow_paint and 1 or 0.1,
 }
 
 function DownloadDialog:init()
