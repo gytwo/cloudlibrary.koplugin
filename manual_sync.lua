@@ -43,13 +43,19 @@ function ManualSync:new(plugin, auto_sync)
     return obj
 end
 
-function ManualSync:syncCurrentBook(is_upload)
-    local doc = self.plugin.ui.document
-    if not doc then
-        self:showMsg(_("Please open a book first"))
+function ManualSync:syncCurrentBook(is_upload, retry)
+    local NetworkMgr = require("ui/network/manager")
+    if not retry and NetworkMgr:willRerunWhenOnline(function()
+        self:syncCurrentBook(is_upload, true)
+    end) then
         return
     end
-    
+
+    if not self.plugin or not self.plugin.ui or not self.plugin.ui.document then
+        self:showMsg(_("No book is currently open"))
+        return
+    end
+    local doc = self.plugin.ui.document
     local file = doc.file
     local DocSettings = require("docsettings")
     local metadata_file = DocSettings:findSidecarFile(file)
@@ -106,7 +112,13 @@ function ManualSync:syncCurrentBook(is_upload)
     end
 end
 
-function ManualSync:syncCurrentBookMerge()
+function ManualSync:syncCurrentBookMerge(retry)
+    local NetworkMgr = require("ui/network/manager")
+    if not retry and NetworkMgr:willRerunWhenOnline(function()
+        self:syncCurrentBookMerge(true)
+    end) then
+        return
+    end
     local doc = self.plugin.ui.document
     if not doc then
         self:showMsg(_("Please open a book first"))
@@ -383,8 +395,9 @@ end
 
 function ManualSync:batchSyncWithFMSelection(is_upload, is_merge)
     local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isOnline() then
-        self:showMsg(_("No network connection, cannot sync"))
+    if not retry and NetworkMgr:willRerunWhenOnline(function()
+        self:batchSyncWithFMSelection(is_upload, is_merge, true)
+    end) then
         return
     end
 
