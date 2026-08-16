@@ -64,6 +64,7 @@ return {
     "Add auto WiFi prompt and retry for network-dependent operations",
     "Optimize download/delete dialog refresh logic for better K3/e-ink experience",
     "Wrap page navigation for K3/e-ink devices",
+    "Display release notes when new version is found"
     "Improved Chinese translations",
 },
 }
