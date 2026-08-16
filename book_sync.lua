@@ -646,11 +646,11 @@ end
 
 function M.show_cloud_book_dialog(callback, plugin, retry)
     local NetworkMgr = require("ui/network/manager")
-       if NetworkMgr:willRerunWhenOnline(function()
-          M.show_cloud_book_dialog(callback, plugin, true)
-          end) then
+    if not retry and NetworkMgr:willRerunWhenOnline(function()
+        M.show_cloud_book_dialog(callback, plugin, true)
+    end) then
         return
-      end
+    end
     
     local server = get_book_server()
     if not server then
