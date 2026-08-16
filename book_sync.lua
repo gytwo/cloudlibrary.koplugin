@@ -892,11 +892,19 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
     -- Turn to another page of the list (clamped). Rebuilds the dialog, as the
     -- list is paginated by recreating the ButtonDialog. Returns true if the page
     -- actually changed.
-    go_to_page = function(page)
+    -- wrap: a page-turn gesture (arrows, hardware keys) cycles past the ends the way the
+    -- reader's other lists do; a focus move into the margin only clamps, so the cursor
+    -- does not jump from the last book to the first.
+    go_to_page = function(page, wrap)
         local total_pages = math.ceil(#books / items_per_page)
         if total_pages < 1 then total_pages = 1 end
-        if page < 1 then page = 1 end
-        if page > total_pages then page = total_pages end
+        if wrap then
+            if page < 1 then page = total_pages end
+            if page > total_pages then page = 1 end
+        else
+            if page < 1 then page = 1 end
+            if page > total_pages then page = total_pages end
+        end
         if page == current_page then return false end
         current_page = page
         -- put the cursor on the first book row of the new page
@@ -1248,7 +1256,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
                     if dx ~= 0 and self.layout and self.selected then
                         local row = self.layout[self.selected.y]
                         if row and #row == 1 then
-                            go_to_page(current_page + (dx > 0 and 1 or -1))
+                            go_to_page(current_page + (dx > 0 and 1 or -1), true)
                             return true
                         end
                     end
@@ -1265,11 +1273,11 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
                 dialog.key_events.CloudNextPage = { { Input.group.PgFwd } }
                 dialog.key_events.CloudPrevPage = { { Input.group.PgBack } }
                 dialog.onCloudNextPage = function()
-                    go_to_page(current_page + 1)
+                    go_to_page(current_page + 1, true)
                     return true
                 end
                 dialog.onCloudPrevPage = function()
-                    go_to_page(current_page - 1)
+                    go_to_page(current_page - 1, true)
                     return true
                 end
             end
