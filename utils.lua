@@ -166,7 +166,12 @@ local DownloadDialog = InputContainer:extend{
     description = nil,
     progress_max = 100,
     buttons = nil,
-    refresh_time_seconds = 0.1,
+    -- A progress bar is read by eye, and an eye has nothing to gain from more than
+    -- one update per second. Every repaint is paid for by the operation reporting
+    -- the progress, which on an e-ink screen is not cheap: on a Kindle 3 a single
+    -- one takes 80-260 ms, so at 0.1 s the batch download spent 48.7 s of its 56 s
+    -- painting rather than downloading.
+    refresh_time_seconds = 1,
 }
 
 function DownloadDialog:init()
