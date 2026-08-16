@@ -676,6 +676,8 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
     local current_path = server.url
     local browse_history = {}  -- for going back to parent
     local root_path = "/"      -- cloud storage root
+    local current_folders = {} -- subfolders of current path
+    local folder_offset = 0    -- offset for paginating subfolder quick buttons
     
     -- ===== Get parent directory =====
     local function get_parent_path(path)
@@ -776,6 +778,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
     
     local function load_books(path)
         current_path = path
+        folder_offset = 0  -- Reset folder pagination when switching directory
         local result, err = fetch_path_content(path)
         if not result then
             show_notification(err or _("Cannot load directory"), 3)
@@ -792,6 +795,9 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         -- Update server.url so delete_cloud_book uses the new path
         server.url = current_path
         
+        -- Save subfolders for quick buttons
+        current_folders = result.folders or {}
+        
         original_books = result.books or {}
         for _, book in ipairs(original_books) do
             selected[book.name] = false
@@ -800,6 +806,13 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         refresh_book_list()
         update_buttons()
         return true
+    end
+    
+    -- ===== Enter subfolder =====
+    local function enter_folder(folder_path)
+        table.insert(browse_history, current_path)
+        current_path = folder_path
+        load_books(current_path)
     end
     
     -- ===== Directory browser =====
@@ -1002,6 +1015,77 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         end
         
         table.insert(buttons, nav_buttons)
+        table.insert(buttons, {})
+        
+        -- ===== Subfolder quick buttons =====
+        local subfolders = current_folders or {}
+        local show_folders = {}
+        local total = #subfolders
+        
+        if total == 0 then
+            table.insert(show_folders, {
+                text = _("No subfolders"),
+                enabled = false,
+            })
+        else
+            local display_count = 4  -- Total 4 button slots
+            
+            if total <= 3 then
+                -- total <= 3: show all, leave empty slots
+                for i = 1, total do
+                    table.insert(show_folders, {
+                        text = subfolders[i].name,
+                        callback = function()
+                            enter_folder(subfolders[i].path)
+                        end
+                    })
+                end
+                local remaining = display_count - #show_folders
+                for i = 1, remaining do
+                    table.insert(show_folders, {
+                        text = "",
+                        enabled = false,
+                    })
+                end
+            else
+                -- total > 3: show 3 subfolders + refresh button
+                local start_idx = folder_offset + 1
+                local end_idx = math.min(start_idx + 3 - 1, total)
+                
+                for i = start_idx, end_idx do
+                    table.insert(show_folders, {
+                        text = subfolders[i].name,
+                        callback = function()
+                            enter_folder(subfolders[i].path)
+                        end
+                    })
+                end
+                
+                -- Fill up to 3 slots if current batch has less than 3
+                local current_count = #show_folders
+                for i = current_count + 1, 3 do
+                    table.insert(show_folders, {
+                        text = "",
+                        enabled = false,
+                    })
+                end
+                
+                -- Refresh button
+                table.insert(show_folders, {
+                    text = "↻",
+                    callback = function()
+                        if end_idx >= total then
+                            folder_offset = 0
+                        else
+                            folder_offset = folder_offset + 3
+                        end
+                        update_buttons()
+                    end
+                })
+            end
+        end
+        
+        table.insert(buttons, show_folders)
         table.insert(buttons, {})
         
         -- ===== Search results display =====
