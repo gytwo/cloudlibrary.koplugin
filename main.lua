@@ -169,7 +169,7 @@ function CloudLibraryPlugin:buildMenuItems()
                 local time_part = last_sync:match("(.+) %(") or last_sync
                 local action_part = last_sync:match("%((.+)%)") or ""
                 if action_part ~= "" then
-                    return string.format("Last sync: %s\n(%s)", time_part, action_part)
+                    return string.format(_("Last sync: %s\n(%s)"), time_part, action_part)
                 else
                     return T(_("Last sync: %1"), last_sync)
                 end
