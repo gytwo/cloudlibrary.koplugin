@@ -1680,7 +1680,7 @@ function M.cleanupFileManagerSelection()
     end
 end
 
-function M.batchUploadWithFMSelection(plugin)
+function M.batchUploadWithFMSelection(plugin, retry)
     local NetworkMgr = require("ui/network/manager")
     if not retry and NetworkMgr:willRerunWhenOnline(function()
         M.batchUploadWithFMSelection(plugin, true)
