@@ -1256,8 +1256,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
                     if dx ~= 0 and self.layout and self.selected then
                         local row = self.layout[self.selected.y]
                         if row and #row == 1 then
-                             
-              (dx > 0 and 1 or -1), true)
+                            go_to_page(current_page + (dx > 0 and 1 or -1), true)
                             return true
                         end
                     end
