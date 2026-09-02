@@ -473,7 +473,10 @@ msgid "Please open a book first"
 msgstr "请先打开一本书"
 
 msgid "Local metadata file not found"
-msgstr "找不到当前书籍的元数据文件"
+msgstr "本地无元数据文件"
+
+msgid "Metadata file not found in cloud"
+msgstr "云端无元数据文件"
 
 msgid "No network connection, cannot sync"
 msgstr "网络未连接，无法同步"
@@ -705,9 +708,6 @@ msgstr "设备休眠"
 
 msgid "Open book"
 msgstr "打开书籍"
-
-msgid "Local metadata file not found"
-msgstr "未找到本地元数据文件"
 
 msgid "Please open the book first to generate metadata file"
 msgstr "请先打开该书生成元数据文件"
