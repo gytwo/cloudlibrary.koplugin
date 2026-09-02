@@ -67,4 +67,9 @@ return {
     "Display release notes when new version is found"
     "Improved Chinese translations",
 },
+["1.4.5"] = {
+    "Integrate with Bookshelf: batch operations now auto-enter Bookshelf selection mode and retrieve selected books",
+    "Fix garbled text when truncating Chinese folder paths in cloud book dialog navigation",
+    "Improved Chinese translations",
+},
 }
