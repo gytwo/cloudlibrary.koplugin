@@ -419,6 +419,30 @@ function ManualSync:batchSyncWithFMSelection(is_upload, is_merge)
         return
     end
 
+      -- ===== Bookshelf support =====
+    if utils.isBookshelfShowing() then
+        local files = utils.bookshelfGetSelectedFiles()
+        
+        if #files == 0 then
+            utils.bookshelfEnterSelection()
+            local action_text = is_upload and _("upload") or (is_merge and _("download-merge") or _("download-overwrite"))
+            local button_text = is_upload and _("Batch upload metadata") or (is_merge and _("Batch download metadata - Merge") or _("Batch download metadata - Overwrite"))
+            UIManager:show(Notification:new{
+                text = string.format(_("Please select books to %s, then tap \"%s\""), action_text, button_text),
+                timeout = 5
+            })
+            return
+        end
+        
+        local selected_files = {}
+        for _, file in ipairs(files) do
+            selected_files[file] = true
+        end
+        
+        self:processSelectedFiles(is_upload, is_merge, selected_files)
+        return
+    end
+    
     local ui = self.plugin.ui
     
     local action_text = ""
@@ -537,6 +561,7 @@ function ManualSync:processSelectedFiles(is_upload, is_merge, selected_files)
         cancel_text = _("Cancel"),
         ok_callback = function()
             self:doBatchSync(is_upload, is_merge, books)
+            utils.bookshelfExitSelection()
         end
     })
 end
