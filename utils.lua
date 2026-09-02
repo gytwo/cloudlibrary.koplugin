@@ -314,4 +314,78 @@ function M.is_path_excluded(file_path, exclude_dirs)
     return false
 end
 
+-- ============================================================
+-- Bookshelf integration: automatically enter selection mode and retrieve selected file list for batch operations
+-- ============================================================
+
+function M.findBookshelfWidget()
+    local stack = UIManager._window_stack
+    if not stack then
+        return nil
+    end
+    
+    for i, entry in ipairs(stack) do
+        local widget = entry.widget
+        if widget and widget.name == "bookshelf" then
+            return widget
+        end
+    end
+    
+    return nil
+end
+
+function M.isBookshelfShowing()
+    local widget = M.findBookshelfWidget()
+    if not widget then
+        return false
+    end
+    return UIManager:isWidgetShown(widget)
+end
+
+function M.bookshelfEnterSelection()
+    local widget = M.findBookshelfWidget()
+    if not widget then
+        return false
+    end
+    
+    if not widget._selection:isActive() then
+        widget._selection:enterMode()
+        widget:_rebuild()
+        UIManager:setDirty(widget, "ui")
+    end
+    return true
+end
+
+function M.bookshelfExitSelection()
+    local widget = M.findBookshelfWidget()
+    if not widget then
+        return false
+    end
+    
+    if widget._selection:isActive() then
+        widget._selection:exitMode()
+        widget:_rebuild()
+        UIManager:setDirty(widget, "ui")
+    end
+    return true
+end
+
+function M.bookshelfGetSelectedFiles()
+    local widget = M.findBookshelfWidget()
+    if not widget then
+        return {}
+    end
+    
+    -- Get selected file paths via Selection:paths()
+    return widget._selection:paths() or {}
+end
+
+function M.bookshelfIsInSelectionMode()
+    local widget = M.findBookshelfWidget()
+    if not widget then
+        return false
+    end
+    return widget._selection:isActive()
+end
+
 return M
