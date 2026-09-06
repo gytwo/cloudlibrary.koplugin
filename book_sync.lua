@@ -890,7 +890,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         
         local display_path = current_path
         if #display_path > 40 then
-            display_path = "..." .. display_path:sub(-37)
+            display_path = "..." .. util.fixUtf8(display_path:sub(-37), "")
         end
         
         browse_dialog = ButtonDialog:new{
@@ -957,7 +957,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         -- ===== Navigation bar =====
         local display_path = current_path
         if #display_path > 20 then
-            display_path = "..." .. display_path:sub(-17)
+           display_path = "..." .. util.fixUtf8(display_path:sub(-17), "")
         end
         
         local nav_buttons = {}
@@ -976,7 +976,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         if parent_path then
             local parent_display = parent_path
             if #parent_display > 15 then
-                parent_display = "..." .. parent_display:sub(-12)
+                parent_display = "..." .. util.fixUtf8(parent_display:sub(-12), "")
             end
             table.insert(nav_buttons, {
                 text = parent_display,
@@ -1799,6 +1799,62 @@ function M.batchUploadWithFMSelection(plugin, retry)
         return
     end
 
+     -- ===== Bookshelf support =====
+    if utils.isBookshelfShowing() then
+        local files = utils.bookshelfGetSelectedFiles()
+        
+        if #files == 0 then
+            utils.bookshelfEnterSelection()
+            UIManager:show(Notification:new{
+                text = string.format(_("Please select books to %s, then tap \"%s\""), 
+                    _("upload"), _("Batch upload selected books")),
+                timeout = 5
+            })
+            return
+        end
+        
+        local books = {}
+        for _, file in ipairs(files) do
+            if is_supported_book(file) then
+                local filename = file:match("([^/]+)$") or _("Unknown")
+                local basename = strip_extension(filename)
+                local props = {}
+                if plugin.ui and plugin.ui.bookinfo then
+                    props = plugin.ui.bookinfo:getDocProps(file, nil, true) or {}
+                end
+                
+                table.insert(books, {
+                    file_path = file,
+                    path = file,
+                    name = filename,
+                    title = props.title or props.display_title or basename,
+                    author = props.authors,
+                    book_basename = basename,
+                })
+            end
+        end
+        
+        if #books == 0 then
+            UIManager:show(Notification:new{
+                text = _("No valid book files selected"),
+                timeout = 3
+            })
+            return
+        end
+        
+        local naming_mode = plugin.settings.book_naming_mode or "title"
+        UIManager:show(ConfirmBox:new{
+            text = string.format(_("Upload %d book(s) to cloud"), #books),
+            ok_text = _("Continue"),
+            cancel_text = _("Cancel"),
+            ok_callback = function()
+                M.batchUploadBooks(books, naming_mode, plugin.settings, plugin)
+                utils.bookshelfExitSelection()
+            end
+        })
+        return
+    end
+    
     local ui = plugin.ui
     local action_text = _("upload")
     local button_text = _("Batch upload selected books")

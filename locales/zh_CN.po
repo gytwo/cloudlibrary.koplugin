@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: cloudlibrary v1.3\n"
+"Project-Id-Version: cloudlibrary v1.4.5\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-01-01 00:00+0000\n"
 "PO-Revision-Date: 2024-01-01 00:00+0000\n"
@@ -71,6 +71,9 @@ msgstr "元数据下载模式（手动）：覆盖更新"
 
 msgid "Metadata download mode (manual): Merge"
 msgstr "元数据下载模式（手动）：合并更新"
+
+msgid "Auto sync"
+msgstr "自动同步"
 
 msgid "Auto Sync Settings (Metadata Only)"
 msgstr "自动同步设置（仅元数据）"
@@ -191,6 +194,9 @@ msgstr "书籍使用「标题_作者」格式命名"
 # Metadata sync menu
 msgid "Upload current book metadata"
 msgstr "上传当前书籍元数据"
+
+msgid "Download current book metadata"
+msgstr "下载当前书籍元数据"
 
 msgid "Download current book metadata (%s)"
 msgstr "下载当前书籍元数据（%s）"
@@ -473,7 +479,10 @@ msgid "Please open a book first"
 msgstr "请先打开一本书"
 
 msgid "Local metadata file not found"
-msgstr "找不到当前书籍的元数据文件"
+msgstr "本地无元数据文件"
+
+msgid "Metadata file not found in cloud"
+msgstr "云端无元数据文件"
 
 msgid "No network connection, cannot sync"
 msgstr "网络未连接，无法同步"
@@ -705,9 +714,6 @@ msgstr "设备休眠"
 
 msgid "Open book"
 msgstr "打开书籍"
-
-msgid "Local metadata file not found"
-msgstr "未找到本地元数据文件"
 
 msgid "Please open the book first to generate metadata file"
 msgstr "请先打开该书生成元数据文件"

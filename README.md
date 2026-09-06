@@ -135,6 +135,9 @@ cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 versi
 33. Wrap page navigation for K3/e-ink devices(v1.4.4)
 34. Display release notes when new version is found(v1.4.4)
 35. Improved Chinese translations(v1.4.4)
+36. Integrate with Bookshelf: batch operations now auto-enter Bookshelf selection mode and retrieve selected books(v1.4.5)
+37. Fix garbled text when truncating Chinese folder paths in cloud book dialog navigation(v1.4.5)
+38. Improved Chinese translations(v1.4.5)
 
 #### Contributing
 
