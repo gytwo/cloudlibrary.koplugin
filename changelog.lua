@@ -70,6 +70,7 @@ return {
 ["1.4.5"] = {
     "Integrate with Bookshelf: batch operations now auto-enter Bookshelf selection mode and retrieve selected books",
     "Fix garbled text when truncating Chinese folder paths in cloud book dialog navigation",
+    "Optimization: Repaint the progress bar once a second on non-touch Kindles to improve download progress feedback"
     "Improved Chinese translations",
 },
 }
