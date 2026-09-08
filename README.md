@@ -137,7 +137,8 @@ cloudlibrary (renamed) adds new features and fixes bugs based on the v0.22 versi
 35. Improved Chinese translations(v1.4.4)
 36. Integrate with Bookshelf: batch operations now auto-enter Bookshelf selection mode and retrieve selected books(v1.4.5)
 37. Fix garbled text when truncating Chinese folder paths in cloud book dialog navigation(v1.4.5)
-38. Improved Chinese translations(v1.4.5)
+38. Optimization: Repaint the progress bar once a second on non-touch Kindles to improve download progress feedback(v1.4.5)
+39. Improved Chinese translations(v1.4.5)
 
 #### Contributing
 
