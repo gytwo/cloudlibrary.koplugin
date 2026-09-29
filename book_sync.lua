@@ -81,6 +81,142 @@ local function get_api(server)
     return nil
 end
 
+-- 坚果云 WebDAV 分页版 listFolder
+-- 原版 webdavapi.listFolder 只发一次 PROPFIND，坚果云单次最多 750 个文件，
+-- 超出部分要靠响应头 Link 里的 mk 游标翻页。这里自己实现，绕开 KOReader 核心。
+local function webdav_list_folder_paged(server, folder_path, include_folders)
+    local DocumentRegistry = require("document/documentregistry")
+    local datetime = require("datetime")
+    local ffiUtil = require("ffi/util")
+    local http = require("socket.http")
+    local ltn12 = require("ltn12")
+    local socket = require("socket")
+    local socketutil = require("socketutil")
+    local util = require("util")
+
+    -- KOReader 的 WebDavApi.trim_slashes / rtrim_slashes 没有导出，这里自己实现
+    local function trim_slashes(s)
+        local from = s:match("^/*()")
+        return from > #s and "" or s:match(".*[^/]", from)
+    end
+
+    local function rtrim_slashes(s)
+        local n = #s
+        while n > 0 and s:find("^/", n) do
+            n = n - 1
+        end
+        return s:sub(1, n)
+    end
+
+    local address = server.address
+    local user = server.username
+    local pass = server.password
+
+    local path = folder_path or ""
+    path = trim_slashes(path)
+    address = rtrim_slashes(address)
+    local webdav_url = address .. "/" .. util.urlEncode(path, "/")
+    if webdav_url:sub(-1) ~= "/" then
+        webdav_url = webdav_url .. "/"
+    end
+    local webdav_url_path = trim_slashes(
+        util.urlDecode(webdav_url:match("^https?://[^/]*(.*)$") or webdav_url))
+
+    local data = [[<?xml version="1.0"?><a:propfind xmlns:a="DAV:"><a:prop><a:resourcetype/><a:getcontentlength/><a:getlastmodified/></a:prop></a:propfind>]]
+    local show_unsupported = G_reader_settings:isTrue("show_unsupported")
+
+    local all_items = {}
+    local next_mk = nil
+    local page = 0
+
+    repeat
+        page = page + 1
+        if page > 50 then break end
+
+        local request_url = webdav_url
+        if next_mk then
+            request_url = webdav_url .. "?mk=" .. next_mk
+        end
+
+        local sink = {}
+        socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
+        local request = {
+            url      = request_url,
+            method   = "PROPFIND",
+            headers  = {
+                ["Content-Type"]   = "application/xml",
+                ["Depth"]          = "1",
+                ["Content-Length"] = #data,
+            },
+            user     = user,
+            password = pass,
+            source   = ltn12.source.string(data),
+            sink     = ltn12.sink.table(sink),
+        }
+        local code, headers, status = socket.skip(1, http.request(request))
+        socketutil:reset_timeout()
+
+        if not code or code < 200 or code > 299 then
+            break
+        end
+
+        local res = table.concat(sink)
+        if res ~= "" then
+            for item in res:gmatch("<[^:]*:response[^>]*>(.-)</[^:]*:response>") do
+                local item_fullpath = util.urlDecode(item:match("<[^:]*:href[^>]*>(.*)</[^:]*:href>"))
+                local item_name = ffiUtil.basename(util.htmlEntitiesToUtf8(item_fullpath))
+                local is_not_collection = item:find("<[^:]*:resourcetype%s*/>") or
+                                          item:find("<[^:]*:resourcetype>%s*</[^:]*:resourcetype>")
+                if is_not_collection then
+                    if show_unsupported or DocumentRegistry:hasProvider(item_name) then
+                        local file_size = tonumber(item:match("<[^:]*:getcontentlength[^>]*>(%d+)</[^:]*:getcontentlength>"))
+                        local modification, suffix, mandatory
+                        if include_folders then
+                            local item_modified = item:match("<[^:]*:getlastmodified[^>]*>(.*)</[^:]*:getlastmodified>")
+                            modification = item_modified and datetime.stringRFC1123ToSeconds(item_modified)
+                            suffix = util.getFileNameSuffix(item_name)
+                            mandatory = util.getFriendlySize(file_size)
+                        end
+                        table.insert(all_items, {
+                            is_file = true,
+                            text = item_name,
+                            url = path .. "/" .. item_name,
+                            filesize = file_size,
+                            modification = modification,
+                            suffix = suffix,
+                            mandatory = mandatory,
+                        })
+                    end
+                elseif item:find("<[^:]*:collection[^<]*/>") or item:find("<[^:]*:collection>%s*</[^:]*:collection>") then
+                    if include_folders then
+                        local is_not_current_dir = trim_slashes(item_fullpath) ~= webdav_url_path
+                        if is_not_current_dir then
+                            table.insert(all_items, {
+                                is_folder = true,
+                                text = item_name .. "/",
+                                url = path .. "/" .. item_name,
+                            })
+                        end
+                    end
+                end
+            end
+        end
+
+        if headers then
+            local link = headers.link or headers.Link
+            if link then
+                next_mk = link:match("mk=([^>&]+)")
+            else
+                next_mk = nil
+            end
+        else
+            next_mk = nil
+        end
+    until not next_mk
+
+    return all_items
+end
+
 local function sanitize_filename(name)
     if not name or name == "" then
         return "unknown_book"
@@ -702,25 +838,25 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
             end
             items = api:listFolder(path, token, true)
         elseif server.type == "webdav" then
-            items = api:listFolder(server.address, server.username, server.password, path, true)
+            items = webdav_list_folder_paged(server, path, true)
         else
             return nil, _("Unsupported cloud storage type")
         end
-        
+
         if not items or type(items) ~= "table" then
             return nil, _("Cannot get cloud file list")
         end
-        
+
         local folders = {}
         local books = {}
-        
+
         for _, item in ipairs(items) do
             -- Skip "Long-press to choose current folder" special entry
             if item.type == "folder_long_press" then
                 goto continue
             end
-            
-            if item.type == "folder" then
+
+            if item.is_folder or item.type == "folder" then
                 local name = item.text:gsub("/$", "")
                 if name ~= "" then
                     table.insert(folders, {
@@ -728,7 +864,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
                         path = item.url,
                     })
                 end
-            elseif item.type == "file" then
+            elseif item.is_file or item.type == "file" then
                 local filename = item.text
                 if filename and is_supported_book(filename) then
                     table.insert(books, {
@@ -740,7 +876,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
             end
             ::continue::
         end
-        
+
         return {
             folders = folders,
             books = books,
