@@ -75,5 +75,7 @@ return {
 },
 ["1.4.6"] = {
     "Fix Nutstore WebDAV 750-file limit causing incomplete cloud book list",
-},  
+    "Add upload/download metadata(CL) and upload book(CL) actions to the long-press menu",
+    "Add batch upload/download metadatas(CL) and batch upload books(CL) to the selection-mode Plus menu",
+},
 }
