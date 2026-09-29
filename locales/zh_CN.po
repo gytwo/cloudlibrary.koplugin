@@ -1318,3 +1318,42 @@ msgstr "[%s] JSON 格式已上传：%s\n"
 
 msgid "Last sync: %s\n(%s)"
 msgstr "上次同步：%s\n(%s)"
+
+msgid "Upload metadata(CL)"
+msgstr "上传元数据(CL)"
+
+msgid "Download metadata(CL)"
+msgstr "下载元数据(CL)"
+
+msgid "Upload metadatas(CL)"
+msgstr "上传元数据(CL)"
+
+msgid "Download metadatas(CL)"
+msgstr "下载元数据(CL)"
+
+msgid "Upload book(CL)"
+msgstr "上传书籍(CL)"
+
+msgid "Upload books(CL)"
+msgstr "上传书籍(CL)"
+
+msgid "Local metadata file not found"
+msgstr "未找到本地元数据文件"
+
+msgid "✓ Metadata upload successful"
+msgstr "✓ 元数据上传成功"
+
+msgid "✓ Metadata download successful"
+msgstr "✓ 元数据下载成功"
+
+msgid "✗ Upload failed: %s"
+msgstr "✗ 上传失败：%s"
+
+msgid "✗ Download failed: %s"
+msgstr "✗ 下载失败：%s"
+
+msgid "No local metadata files found"
+msgstr "未找到本地元数据文件"
+
+msgid "Upload %d book(s) to cloud"
+msgstr "上传 %d 本书到云端"
