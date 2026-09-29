@@ -73,4 +73,7 @@ return {
     "Optimization: Repaint the progress bar once a second on non-touch Kindles to improve download progress feedback"
     "Improved Chinese translations",
 },
+["1.4.6"] = {
+    "Fix Nutstore WebDAV 750-file limit causing incomplete cloud book list",
+},  
 }
