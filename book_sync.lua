@@ -38,6 +38,19 @@ local DownloadDialog = utils.DownloadDialog
 
 local M = {}
 
+-- True when the Simple UI plugin is actually running, not merely installed.
+-- Checking for the file (or requiring one of its modules) would also match a
+-- plugin that is disabled: its files stay on disk, but its init() never runs,
+-- so none of its modules are loaded. main.lua requires these at init, and a
+-- disabled plugin never does, so their presence in package.loaded is a
+-- reliable signal. Evaluated when the list opens, not at load time, so the
+-- answer is taken after every plugin has had a chance to initialise.
+local function simpleui_is_running()
+    return package.loaded["infra/sui_patches"] ~= nil
+        or package.loaded["infra/sui_window_hooks"] ~= nil
+        or package.loaded["features/sui_style"] ~= nil
+end
+
 local function get_book_server()
     local json = require("json")
     local settings = G_reader_settings:readSetting("cloud_library_plugin", {})
@@ -886,13 +899,18 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
     -- ===== Load books list =====
     local original_books = {}
     local search_keyword = ""
-    local items_per_page = 10
+    -- Simple UI's interceptor paginates the list itself and keeps the page
+    -- arrows on screen; with it running, 5 books per page. A disabled or
+    -- absent plugin keeps the native ButtonDialog, which reads better with
+    -- 10.
+    local items_per_page = simpleui_is_running() and 5 or 10
     local current_page = 1
     local selected = {}
     local dialog
     local refresh_book_list
     local update_buttons
     local show_search_dialog
+    local show_page_jump_dialog
     local clear_search
     local go_to_page
     -- When toggling a checkbox rebuilds the dialog, advance the cursor to the
@@ -1292,24 +1310,29 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         table.insert(buttons, {})
         
         -- ===== Page navigation =====
+        -- Both arrows are always shown and wrap around: "previous" on the
+        -- first page goes to the last one, "next" on the last page to the
+        -- first. With a single page they are inert.
         local page_buttons = {}
-        if current_page > 1 then
+        if total_pages > 1 then
             table.insert(page_buttons, {
                 text = _("◀ Previous Page"),
                 callback = function()
-                    go_to_page(current_page - 1)
+                    go_to_page(current_page - 1, true)   -- wrap = true
                 end
             })
         end
         table.insert(page_buttons, {
             text = string.format(_("Page %d/%d (%d books)"), current_page, total_pages, #books),
-            enabled = false,
+            callback = function()
+                show_page_jump_dialog(total_pages)
+            end,
         })
-        if current_page < total_pages then
+        if total_pages > 1 then
             table.insert(page_buttons, {
                 text = _("Next Page ▶"),
                 callback = function()
-                    go_to_page(current_page + 1)
+                    go_to_page(current_page + 1, true)   -- wrap = true
                 end
             })
         end
@@ -1578,6 +1601,46 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         }
         UIManager:show(search_dialog)
         search_dialog:onShowKeyboard()
+    end
+
+    show_page_jump_dialog = function(total_pages)
+        local InputDialog = require("ui/widget/inputdialog")
+        local jump_dialog = nil
+        jump_dialog = InputDialog:new{
+            title = _("Jump to page"),
+            input = tostring(current_page),
+            input_hint = string.format(_("1 - %d"), total_pages),
+            input_type = "number",
+            buttons = {
+                {
+                    {
+                        text = _("Cancel"),
+                        id = "close",
+                        callback = function()
+                            UIManager:close(jump_dialog)
+                        end,
+                    },
+                    {
+                        text = _("Go"),
+                        is_enter_default = true,
+                        callback = function()
+                            local text = jump_dialog:getInputText()
+                            local n = tonumber(text)
+                            UIManager:close(jump_dialog)
+                            if not n then return end
+                            n = math.floor(n)
+                            if n < 1 then n = 1 end
+                            if n > total_pages then n = total_pages end
+                            if n ~= current_page then
+                                go_to_page(n)
+                            end
+                        end,
+                    },
+                },
+            },
+        }
+        UIManager:show(jump_dialog)
+        jump_dialog:onShowKeyboard()
     end
     
     clear_search = function()
