@@ -57,6 +57,13 @@ function ManualSync:syncCurrentBook(is_upload, retry)
     end
     local doc = self.plugin.ui.document
     local file = doc.file
+    -- 先落盘当前打开书的 settings，确保 sidecar 已生成
+    local ReaderUI = require("apps/reader/readerui")
+    local current_ui = ReaderUI.instance
+    if current_ui and current_ui.document and current_ui.document.file == file then
+        current_ui:saveSettings()
+        UIManager:broadcastEvent(Event:new("FlushSettings"))
+    end
     local DocSettings = require("docsettings")
     local metadata_file = DocSettings:findSidecarFile(file)
     
@@ -126,6 +133,13 @@ function ManualSync:syncCurrentBookMerge(retry)
     end
     
     local file = doc.file
+    -- 先落盘当前打开书的 settings，确保 sidecar 已生成
+    local ReaderUI = require("apps/reader/readerui")
+    local current_ui = ReaderUI.instance
+    if current_ui and current_ui.document and current_ui.document.file == file then
+        current_ui:saveSettings()
+        UIManager:broadcastEvent(Event:new("FlushSettings"))
+    end
     local DocSettings = require("docsettings")
     local metadata_file = DocSettings:findSidecarFile(file)
     
