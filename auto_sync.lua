@@ -43,6 +43,7 @@ function AutoSync:new(plugin, settings)
     obj.is_syncing = false
     obj.skip_auto_upload = false
     obj.skip_auto_download = false
+    obj._incomplete = {}
     
     return obj
 end
@@ -193,7 +194,14 @@ function AutoSync:sync(document, is_upload, source)
         self:showNotification(book.title, _("Sync failed"), nil, false)
         return
     end
-    
+
+    if is_upload and self._incomplete[file] then
+        self:writeLog(book, source_desc, true, false,
+            _("Skipped: previous auto download failed, cloud may contain data not present locally"))
+        self:showNotification(book.title, _("Auto upload skipped (previous download failed)"), nil, false)
+        return
+    end
+
     self.is_syncing = true
     
     UIManager:scheduleIn(0, function()
