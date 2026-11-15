@@ -1357,3 +1357,30 @@ msgstr "未找到本地元数据文件"
 
 msgid "Upload %d book(s) to cloud"
 msgstr "上传 %d 本书到云端"
+
+# v1.4.7 - auto_sync.lua
+msgid "Skipped: previous auto download failed, cloud may contain data not present locally"
+msgstr "已跳过：上次自动下载失败，云端可能包含本地没有的数据"
+
+msgid "Auto upload skipped (previous download failed)"
+msgstr "已跳过自动上传（上次下载失败）"
+
+# v1.4.7 - manual_sync.lua
+msgid "Confirm upload"
+msgstr "确认上传"
+
+msgid "The last automatic download for this book did not complete successfully.\nThe cloud may contain metadata not present locally. Uploading now will fully overwrite the cloud copy. Continue?"
+msgstr "本书上次自动下载未成功。\n云端可能包含本地没有的元数据。现在上传将完全覆盖云端副本，是否继续？"
+
+msgid "%d of %d book(s) had a failed automatic download last time. The cloud may contain metadata not present locally; uploading now will fully overwrite the cloud copy. Continue?"
+msgstr "共 %d/%d 本书上次自动下载失败。云端可能包含本地没有的元数据；现在上传将完全覆盖云端副本，是否继续？"
+
+# v1.4.7 - main.lua
+msgid "Auto download is not enabled.\nAuto upload will overwrite the cloud metadata file directly.\n\nEnable auto download (merge) and immediately merge-update the current book's metadata?"
+msgstr "未开启自动下载。\n自动上传将直接覆盖云端元数据文件。\n\n是否开启自动下载（合并更新）并立即合并更新当前书籍的元数据？"
+
+msgid "Auto download is not enabled.\nAuto upload will overwrite the cloud metadata file directly.\n\nEnable auto download (merge)?"
+msgstr "未开启自动下载。\n自动上传将直接覆盖云端元数据文件。\n\n是否开启自动下载（合并更新）？"
+
+msgid "Worry-Free Sync Mode is now enabled.\n\nTo avoid overwriting newer cloud data, merge-update the current book from the cloud now?"
+msgstr "已开启省心同步模式。\n\n为避免覆盖云端较新的数据，是否现在从云端合并更新当前书籍？"
