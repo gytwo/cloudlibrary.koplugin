@@ -23,6 +23,7 @@ local lfs = require("libs/libkoreader-lfs")
 local DataStorage = require("datastorage")
 local _ = require("gettext")
 local utils = dofile(_plugin_dir .. "utils.lua")
+local Event = require("ui/event")
 
 local AutoSync = {
     is_syncing = false,
@@ -154,6 +155,14 @@ function AutoSync:sync(document, is_upload, source)
         source_desc = _("Open book")
     end
     
+    -- 先落盘当前打开书的 settings，确保 sidecar 已生成
+    local ReaderUI = require("apps/reader/readerui")
+    local current_ui = ReaderUI.instance
+    if current_ui and current_ui.document and current_ui.document.file == file then
+        current_ui:saveSettings()
+        UIManager:broadcastEvent(Event:new("FlushSettings"))
+    end
+
     local DocSettings = require("docsettings")
     local metadata_file = DocSettings:findSidecarFile(file)
     local props = {}
