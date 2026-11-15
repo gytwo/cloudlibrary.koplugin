@@ -81,5 +81,6 @@ return {
 ["1.4.7"] = {
     "Long-press menu actions (upload/download metadata, upload book) and selection-mode Plus menu actions now reuse the existing batch pipelines instead of duplicating logic",
     "Fix book upload from the long-press menu dropping the author field, which broke the title_author naming mode",
+    "Flush the currently open book's metadata to disk before checking for its sidecar",
 },
 }
