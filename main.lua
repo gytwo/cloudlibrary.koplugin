@@ -853,6 +853,9 @@ function CloudLibraryPlugin:buildAutoSyncMenu()
                         self.settings.auto_upload_on_annotate = not self.settings.auto_upload_on_annotate
                         self:updateAutoSyncSettings()
                         utils.show_msg(self.settings.auto_upload_on_annotate and _("Enabled: Auto upload when editing annotations") or _("Disabled: Auto upload when editing annotations"))
+                        if self.settings.auto_upload_on_annotate then
+                            self:checkAutoUploadRisk()
+                        end
                     end,
                 },
                 {
@@ -864,6 +867,9 @@ function CloudLibraryPlugin:buildAutoSyncMenu()
                         self.settings.auto_upload_on_close = not self.settings.auto_upload_on_close
                         self:updateAutoSyncSettings()
                         utils.show_msg(self.settings.auto_upload_on_close and _("Enabled: Auto upload when closing book") or _("Disabled: Auto upload when closing book"))
+                        if self.settings.auto_upload_on_close then
+                            self:checkAutoUploadRisk()
+                        end
                     end,
                 },
                 {
@@ -875,6 +881,9 @@ function CloudLibraryPlugin:buildAutoSyncMenu()
                         self.settings.auto_upload_on_suspend = not self.settings.auto_upload_on_suspend
                         self:updateAutoSyncSettings()
                         utils.show_msg(self.settings.auto_upload_on_suspend and _("Enabled: Auto upload when device suspends") or _("Disabled: Auto upload when device suspends"))
+                        if self.settings.auto_upload_on_suspend then
+                            self:checkAutoUploadRisk()
+                        end
                     end,
                 },
             },
@@ -975,6 +984,36 @@ function CloudLibraryPlugin:updateAutoSyncSettings()
     self.settings.auto_sync_enabled = has_upload or has_download
     
     G_reader_settings:saveSetting(self.plugin_id, self.settings)
+end
+
+function CloudLibraryPlugin:checkAutoUploadRisk()
+    if self.settings.auto_download_on_open then
+        return
+    end
+
+    local is_reading = (self.ui and self.ui.document) or false
+
+    local text
+    if is_reading then
+        text = _("Auto download is not enabled.\nAuto upload will overwrite the cloud metadata file directly.\n\nEnable auto download (merge) and immediately merge-update the current book's metadata?")
+    else
+        text = _("Auto download is not enabled.\nAuto upload will overwrite the cloud metadata file directly.\n\nEnable auto download (merge)?")
+    end
+
+    UIManager:show(ConfirmBox:new{
+        text = text,
+        ok_text = _("Yes"),
+        cancel_text = _("No"),
+        ok_callback = function()
+            self.settings.auto_download_on_open = true
+            self.settings.auto_download_mode = "merge"
+            self:updateAutoSyncSettings()
+            G_reader_settings:saveSetting(self.plugin_id, self.settings)
+            if is_reading then
+                self.manual_sync:syncCurrentBookMerge()
+            end
+        end,
+    })
 end
 
 function CloudLibraryPlugin:viewSyncLog()
@@ -1517,6 +1556,9 @@ function CloudLibraryPlugin:showSettingsDialog()
                 self:updateAutoSyncSettings()
                 G_reader_settings:saveSetting(self.plugin_id, self.settings)
                 rebuildAndShow()
+                if self.settings.auto_upload_on_annotate then
+                    self:checkAutoUploadRisk()
+                end
             end
         }
     })
@@ -1531,6 +1573,9 @@ function CloudLibraryPlugin:showSettingsDialog()
                 self:updateAutoSyncSettings()
                 G_reader_settings:saveSetting(self.plugin_id, self.settings)
                 rebuildAndShow()
+                if self.settings.auto_upload_on_close then
+                    self:checkAutoUploadRisk()
+                end
             end
         }
     })
@@ -1545,6 +1590,9 @@ function CloudLibraryPlugin:showSettingsDialog()
                 self:updateAutoSyncSettings()
                 G_reader_settings:saveSetting(self.plugin_id, self.settings)
                 rebuildAndShow()
+                if self.settings.auto_upload_on_suspend then
+                    self:checkAutoUploadRisk()
+                end
             end
         }
     })
@@ -2127,6 +2175,23 @@ function CloudLibraryPlugin:toggleAutoSyncQuick()
         
         local utils = dofile(_plugin_dir .. "utils.lua")
         utils.show_msg(_("Cloud Library: Worry-Free Sync Mode enabled (auto upload on close/suspend + auto download merge on open)"))
+
+        local file = self.ui and self.ui.document and self.ui.document.file
+        if file then
+            UIManager:show(ConfirmBox:new{
+                text = _("Worry-Free Sync Mode is now enabled.\n\nTo avoid overwriting newer cloud data, merge-update the current book from the cloud now?"),
+                ok_text = _("Yes"),
+                cancel_text = _("No"),
+                ok_callback = function()
+                    self.manual_sync:syncCurrentBookMerge()
+                end,
+                cancel_callback = function()
+                    if self.auto_sync and self.auto_sync._incomplete then
+                        self.auto_sync._incomplete[file] = true
+                    end
+                end,
+            })
+        end
     end
 end
 
