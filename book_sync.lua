@@ -412,6 +412,56 @@ local function show_notification(msg, timeout)
     })
 end
 
+-- 从 selected_files（{ [path] = true }）构造 books 数组。
+-- 与 batchUploadWithFMSelection 内部原逻辑一致：取 bookinfo 的 title/author，
+-- 降维 authors 表，用文件名兜底 title 和 basename。
+local function build_books_from_selected_files(selected_files, plugin)
+    local DocSettings = require("docsettings")
+    local ui = plugin and plugin.ui
+    local books = {}
+
+    for file, selected in pairs(selected_files) do
+        if selected and lfs.attributes(file, "mode") == "file" then
+            if is_supported_book(file) then
+                local filename = file:match("([^/]+)$") or _("Unknown")
+                local basename = strip_extension(filename)
+
+                local props = {}
+                if ui and ui.bookinfo then
+                    props = ui.bookinfo:getDocProps(file, nil, true) or {}
+                end
+                local title = props.title or props.display_title or basename
+                local author = props.authors
+                if type(author) == "table" then
+                    author = author[1]
+                end
+
+                table.insert(books, {
+                    file_path = file,
+                    path = file,
+                    name = filename,
+                    title = title,
+                    author = author,
+                    book_basename = basename,
+                })
+            end
+        end
+    end
+
+    return books
+end
+
+-- 接收 { [path] = true } 的上传入口，供长按菜单 / Plus 菜单等
+-- 不处于 FM 选择模式的场景直接调用。内部复用 batchUploadBooks。
+function M.batchUploadFromSelectedFiles(selected_files, naming_mode, settings, plugin)
+    local books = build_books_from_selected_files(selected_files, plugin)
+    if #books == 0 then
+        show_notification(_("No valid book files selected"), 3)
+        return
+    end
+    M.batchUploadBooks(books, naming_mode, settings, plugin)
+end
+
 function M.upload_book(book_path, show_msg, naming_mode, book_info)
     show_msg = (show_msg == nil) or show_msg
     
@@ -1959,7 +2009,9 @@ function M.cleanupFileManagerSelection()
             end
             fm.file_chooser:updateItems(1, true)
         end
-        fm:onToggleSelectMode(true)
+        if fm.selected_files ~= nil then
+            fm:onToggleSelectMode(false)
+        end
     end
 end
 
@@ -2012,26 +2064,11 @@ function M.batchUploadWithFMSelection(plugin, retry)
             return
         end
         
-        local books = {}
+        local selected_files = {}
         for _, file in ipairs(files) do
-            if is_supported_book(file) then
-                local filename = file:match("([^/]+)$") or _("Unknown")
-                local basename = strip_extension(filename)
-                local props = {}
-                if plugin.ui and plugin.ui.bookinfo then
-                    props = plugin.ui.bookinfo:getDocProps(file, nil, true) or {}
-                end
-                
-                table.insert(books, {
-                    file_path = file,
-                    path = file,
-                    name = filename,
-                    title = props.title or props.display_title or basename,
-                    author = props.authors,
-                    book_basename = basename,
-                })
-            end
+            selected_files[file] = true
         end
+        local books = build_books_from_selected_files(selected_files, plugin)
         
         if #books == 0 then
             UIManager:show(Notification:new{
@@ -2114,34 +2151,7 @@ function M.batchUploadWithFMSelection(plugin, retry)
         return
     end
     
-    local books = {}
-    for file, selected in pairs(selected_files) do
-        if selected and lfs.attributes(file, "mode") == "file" then
-            if is_supported_book(file) then
-                local filename = file:match("([^/]+)$") or _("Unknown")
-                local basename = strip_extension(filename)
-
-                local props = {}
-                if ui and ui.bookinfo then
-                    props = ui.bookinfo:getDocProps(file, nil, true) or {}
-                end
-                local title = props.title or props.display_title or basename
-                local author = props.authors
-                if type(author) == "table" then
-                    author = author[1]
-                end
-                
-                table.insert(books, {
-                    file_path = file,
-                    path = file,
-                    name = filename,
-                    title = title,
-                    author = author,
-                    book_basename = basename,
-                })
-            end
-        end
-    end
+    local books = build_books_from_selected_files(selected_files, plugin)
     
     if #books == 0 then
         UIManager:show(Notification:new{
