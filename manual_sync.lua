@@ -250,9 +250,6 @@ function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
              })
             self:writeSingleLog(book, true, false, true)
             self:updateLastSync(_("Metadata sync") .. "-" .. _("Single upload") .. "-" .. _("Overwrite cloud"))
-            if self.auto_sync and self.auto_sync._incomplete then
-                self.auto_sync._incomplete[book.file] = nil
-            end
         else
             local error_info = remote.get_error_message(error_type, true, naming_mode)
             UIManager:show(Notification:new{
@@ -770,9 +767,6 @@ function ManualSync:doBatchSync(is_upload, is_merge, selected_books)
                         title = book.title,
                         file = book.file
                     })
-                    if self.auto_sync and self.auto_sync._incomplete then
-                        self.auto_sync._incomplete[book.file] = nil
-                    end
                 else
                     local error_info = remote.get_error_message(error_type, is_upload, naming_mode)
                     table.insert(sync_results.failed, {
