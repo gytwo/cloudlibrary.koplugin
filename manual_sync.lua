@@ -48,6 +48,10 @@ function ManualSync:syncCurrentBook(is_upload, retry)
     if not retry and NetworkMgr:willRerunWhenOnline(function()
         self:syncCurrentBook(is_upload, true)
     end) then
+        if not is_upload and self.auto_sync and self.auto_sync._incomplete
+            and self.plugin and self.plugin.ui and self.plugin.ui.document then
+            self.auto_sync._incomplete[self.plugin.ui.document.file] = true
+        end
         return
     end
 
@@ -97,7 +101,19 @@ function ManualSync:syncCurrentBook(is_upload, retry)
     end
 
     if is_upload then
-        self:doSyncCurrentBook(is_upload, file, metadata_file)
+        if self.auto_sync and self.auto_sync._incomplete and self.auto_sync._incomplete[file] then
+            UIManager:show(ConfirmBox:new{
+                title = _("Confirm upload"),
+                text = _("The last automatic download for this book did not complete successfully.\nThe cloud may contain metadata not present locally. Uploading now will fully overwrite the cloud copy. Continue?"),
+                ok_text = _("Continue"),
+                cancel_text = _("Cancel"),
+                ok_callback = function()
+                    self:doSyncCurrentBook(is_upload, file, metadata_file)
+                end,
+            })
+        else
+            self:doSyncCurrentBook(is_upload, file, metadata_file)
+        end
     else
 
         local confirm_dialog = ConfirmBox:new{
@@ -124,6 +140,10 @@ function ManualSync:syncCurrentBookMerge(retry)
     if not retry and NetworkMgr:willRerunWhenOnline(function()
         self:syncCurrentBookMerge(true)
     end) then
+        if self.auto_sync and self.auto_sync._incomplete
+            and self.plugin and self.plugin.ui and self.plugin.ui.document then
+            self.auto_sync._incomplete[self.plugin.ui.document.file] = true
+        end
         return
     end
     local doc = self.plugin.ui.document
@@ -230,6 +250,9 @@ function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
              })
             self:writeSingleLog(book, true, false, true)
             self:updateLastSync(_("Metadata sync") .. "-" .. _("Single upload") .. "-" .. _("Overwrite cloud"))
+            if self.auto_sync and self.auto_sync._incomplete then
+                self.auto_sync._incomplete[book.file] = nil
+            end
         else
             local error_info = remote.get_error_message(error_type, true, naming_mode)
             UIManager:show(Notification:new{
@@ -257,6 +280,13 @@ function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
             timeout = 2
         })
         self:writeSingleLog(book, false, false, false, error_info.reason)
+        if self.auto_sync and self.auto_sync._incomplete then
+            if err_type == "cloud_file_not_found" then
+                self.auto_sync._incomplete[book.file] = nil
+            else
+                self.auto_sync._incomplete[book.file] = true
+            end
+        end
         self.auto_sync:setSkipDownload(false)
         return
     end
@@ -311,6 +341,9 @@ function ManualSync:doSyncCurrentBook(is_upload, file, metadata_file)
 
     self:writeSingleLog(book, false, false, true)
     self:updateLastSync(_("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Overwrite"))
+    if self.auto_sync and self.auto_sync._incomplete then
+        self.auto_sync._incomplete[book.file] = nil
+    end
     self.auto_sync:setSkipDownload(false)
 end
 
@@ -352,6 +385,13 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
             timeout = 3
         })
         self:writeSingleLog(book, false, true, false, error_info.reason)
+        if self.auto_sync and self.auto_sync._incomplete then
+            if err_type == "cloud_file_not_found" then
+                self.auto_sync._incomplete[book.file] = nil
+            else
+                self.auto_sync._incomplete[book.file] = true
+            end
+        end
         self.auto_sync:setSkipDownload(false)
         return
     end
@@ -397,6 +437,9 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
 
     self:writeSingleLog(book, false, true, true)
     self:updateLastSync(_("Metadata sync") .. "-" .. _("Single download") .. "-" .. _("Merge"))
+    if self.auto_sync and self.auto_sync._incomplete then
+        self.auto_sync._incomplete[book.file] = nil
+    end
 
     UIManager:scheduleIn(0.5, function()
         if self.plugin.ui and self.plugin.ui.document then
@@ -407,11 +450,30 @@ function ManualSync:doSyncCurrentBookMerge(file, metadata_file)
     self.auto_sync:setSkipDownload(false)
 end
 
-function ManualSync:batchSyncWithFMSelection(is_upload, is_merge)
+function ManualSync:batchSyncWithFMSelection(is_upload, is_merge, retry)
     local NetworkMgr = require("ui/network/manager")
     if not retry and NetworkMgr:willRerunWhenOnline(function()
         self:batchSyncWithFMSelection(is_upload, is_merge, true)
     end) then
+        if not is_upload and self.auto_sync and self.auto_sync._incomplete then
+            local files = {}
+            if utils.isBookshelfShowing() then
+                files = utils.bookshelfGetSelectedFiles()
+            else
+                local FileManager = require("apps/filemanager/filemanager")
+                local fm = FileManager.instance
+                if fm and fm.selected_files then
+                    for f, selected in pairs(fm.selected_files) do
+                        if selected and lfs.attributes(f, "mode") == "file" then
+                            files[#files + 1] = f
+                        end
+                    end
+                end
+            end
+            for _, f in ipairs(files) do
+                self.auto_sync._incomplete[f] = true
+            end
+        end
         return
     end
 
@@ -568,9 +630,27 @@ function ManualSync:processSelectedFiles(is_upload, is_merge, selected_files)
     else
         action_text = is_merge and _("download-merge") or _("download-overwrite")
     end
-    
+
+    local incomplete_count = 0
+    if is_upload and self.auto_sync and self.auto_sync._incomplete then
+        for _, book in ipairs(books) do
+            if self.auto_sync._incomplete[book.file] then
+                incomplete_count = incomplete_count + 1
+            end
+        end
+    end
+
+    local confirm_text
+    if incomplete_count > 0 then
+        confirm_text = string.format(
+            _("%d of %d book(s) had a failed automatic download last time. The cloud may contain metadata not present locally; uploading now will fully overwrite the cloud copy. Continue?"),
+            incomplete_count, #books)
+    else
+        confirm_text = string.format(_("%s metadata for %d book(s)"), action_text, #books)
+    end
+
     UIManager:show(ConfirmBox:new{
-        text = string.format(_("%s metadata for %d book(s)"), action_text, #books),
+        text = confirm_text,
         ok_text = _("Continue"),
         cancel_text = _("Cancel"),
         ok_callback = function()
@@ -690,6 +770,9 @@ function ManualSync:doBatchSync(is_upload, is_merge, selected_books)
                         title = book.title,
                         file = book.file
                     })
+                    if self.auto_sync and self.auto_sync._incomplete then
+                        self.auto_sync._incomplete[book.file] = nil
+                    end
                 else
                     local error_info = remote.get_error_message(error_type, is_upload, naming_mode)
                     table.insert(sync_results.failed, {
@@ -698,6 +781,13 @@ function ManualSync:doBatchSync(is_upload, is_merge, selected_books)
                         reason = error_info.reason,
                         solution = error_info.solution
                     })
+                    if not is_upload and self.auto_sync and self.auto_sync._incomplete then
+                        if error_type == "cloud_file_not_found" then
+                            self.auto_sync._incomplete[book.file] = nil
+                        else
+                            self.auto_sync._incomplete[book.file] = true
+                        end
+                    end
                 end
             end
             
