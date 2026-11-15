@@ -636,7 +636,9 @@ function ManualSync:doBatchSync(is_upload, is_merge, selected_books)
                     end
                     fm.file_chooser:updateItems(1, true)
                 end
-                fm:onToggleSelectMode(true)
+                if fm.selected_files ~= nil then
+                    fm:onToggleSelectMode(false)
+                end
             end
             return
         end
