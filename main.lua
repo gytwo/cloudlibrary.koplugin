@@ -144,42 +144,7 @@ function CloudLibraryPlugin:init()
                         callback = function()
                             close_dialog()
                             UIManager:nextTick(function()
-                                local DocSettings = require("docsettings")
-                                local metadata_file = DocSettings:findSidecarFile(file)
-                                if not metadata_file or not lfs.attributes(metadata_file, "mode") then
-                                    UIManager:show(Notification:new{
-                                        text = _("Local metadata file not found"),
-                                        timeout = 2,
-                                    })
-                                    return
-                                end
-                                local props = book_props or {}
-                                local title = props.title or props.display_title
-                                    or file:match("([^/]+)$"):gsub("%.[^%.]+$", "")
-                                local author = props.authors
-                                if type(author) == "table" then author = author[1] end
-                                local book = {
-                                    file = file,
-                                    metadata = metadata_file,
-                                    title = title,
-                                    book_basename = file:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
-                                    author = author,
-                                }
-                                local remote = dofile(_plugin_dir .. "remote.lua")
-                                local naming_mode = self.settings.metadata_naming_mode or "metadata"
-                                local success, error_type = remote.upload_book(book, naming_mode)
-                                if success then
-                                    UIManager:show(Notification:new{
-                                        text = _("✓ Metadata upload successful"),
-                                        timeout = 2,
-                                    })
-                                else
-                                    local error_info = remote.get_error_message(error_type, true, naming_mode)
-                                    UIManager:show(Notification:new{
-                                        text = string.format(_("✗ Upload failed: %s"), error_info.reason),
-                                        timeout = 3,
-                                    })
-                                end
+                                self.manual_sync:processSelectedFiles(true, false, { [file] = true })
                             end)
                         end,
                     },
@@ -188,48 +153,8 @@ function CloudLibraryPlugin:init()
                         callback = function()
                             close_dialog()
                             UIManager:nextTick(function()
-                                local DocSettings = require("docsettings")
-                                local metadata_file = DocSettings:findSidecarFile(file)
-                                if not metadata_file or not lfs.attributes(metadata_file, "mode") then
-                                    UIManager:show(Notification:new{
-                                        text = _("Local metadata file not found"),
-                                        timeout = 2,
-                                    })
-                                    return
-                                end
-                                local props = book_props or {}
-                                local title = props.title or props.display_title
-                                    or file:match("([^/]+)$"):gsub("%.[^%.]+$", "")
-                                local author = props.authors
-                                if type(author) == "table" then author = author[1] end
-                                local book = {
-                                    file = file,
-                                    metadata = metadata_file,
-                                    title = title,
-                                    book_basename = file:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
-                                    author = author,
-                                }
-                                local remote = dofile(_plugin_dir .. "remote.lua")
-                                local naming_mode = self.settings.metadata_naming_mode or "metadata"
                                 local is_merge = (self.settings.manual_download_mode == "merge")
-                                local success, error_type
-                                if is_merge then
-                                    success, error_type = remote.download_book_merge(book, naming_mode)
-                                else
-                                    success, error_type = remote.download_book(book, naming_mode)
-                                end
-                                if success then
-                                    UIManager:show(Notification:new{
-                                        text = _("✓ Metadata download successful"),
-                                        timeout = 2,
-                                    })
-                                else
-                                    local error_info = remote.get_error_message(error_type, false, naming_mode)
-                                    UIManager:show(Notification:new{
-                                        text = string.format(_("✗ Download failed: %s"), error_info.reason),
-                                        timeout = 3,
-                                    })
-                                end
+                                self.manual_sync:processSelectedFiles(false, is_merge, { [file] = true })
                             end)
                         end,
                     },
@@ -240,31 +165,7 @@ function CloudLibraryPlugin:init()
                             UIManager:nextTick(function()
                                 local BookSync = dofile(_plugin_dir .. "book_sync.lua")
                                 local naming_mode = self.settings.book_naming_mode or "title"
-                                local props = book_props or {}
-                                local filename = file:match("([^/]+)$") or _("Unknown")
-                                local basename = filename:match("^(.*)%.[^%.]+$") or filename
-                                local title = props.title
-                                if not title or title == "" then
-                                    title = props.display_title
-                                end
-                                if not title or title == "" then
-                                    title = basename
-                                end
-                                local author = props.authors
-                                if type(author) == "table" then
-                                    author = author[1]
-                                end
-                                local books = {
-                                    {
-                                        file_path = file,
-                                        path = file,
-                                        name = filename,
-                                        title = title,
-                                        author = author,
-                                        book_basename = basename,
-                                    },
-                                }
-                                BookSync.batchUploadBooks(books, naming_mode, self.settings, self)
+                                BookSync.batchUploadFromSelectedFiles({ [file] = true }, naming_mode, self.settings, self)
                             end)
                         end,
                     },
@@ -310,35 +211,11 @@ function CloudLibraryPlugin:init()
                     callback = function()
                         UIManager:close(self_fm.plus_dialog)
                         UIManager:nextTick(function()
-                            if self_fm.file_chooser and self_fm.file_chooser.item_table then
-                                for _i, item in ipairs(self_fm.file_chooser.item_table) do
-                                    if item.is_file then item.dim = nil end
-                                end
-                                self_fm.file_chooser:updateItems(1, true)
+                            local selected_files = {}
+                            for _, fpath in ipairs(files) do
+                                selected_files[fpath] = true
                             end
-                            self_fm:onToggleSelectMode(true)
-
-                            local DocSettings = require("docsettings")
-                            local books = {}
-                            for _i, fpath in ipairs(files) do
-                                local mf = DocSettings:findSidecarFile(fpath)
-                                if mf and lfs.attributes(mf, "mode") then
-                                    books[#books + 1] = {
-                                        file = fpath,
-                                        metadata = mf,
-                                        title = fpath:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
-                                        book_basename = fpath:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
-                                    }
-                                end
-                            end
-                            if #books == 0 then
-                                UIManager:show(Notification:new{
-                                    text = _("No local metadata files found"),
-                                    timeout = 2,
-                                })
-                                return
-                            end
-                            self.manual_sync:doBatchSync(true, false, books)
+                            self.manual_sync:processSelectedFiles(true, false, selected_files)
                         end)
                     end,
                 },
@@ -347,8 +224,12 @@ function CloudLibraryPlugin:init()
                     callback = function()
                         UIManager:close(self_fm.plus_dialog)
                         UIManager:nextTick(function()
+                            local selected_files = {}
+                            for _, fpath in ipairs(files) do
+                                selected_files[fpath] = true
+                            end
                             local is_merge = (self.settings.manual_download_mode == "merge")
-                            self.manual_sync:batchSyncWithFMSelection(false, is_merge)
+                            self.manual_sync:processSelectedFiles(false, is_merge, selected_files)
                         end)
                     end,
                 },
@@ -357,34 +238,13 @@ function CloudLibraryPlugin:init()
                     callback = function()
                         UIManager:close(self_fm.plus_dialog)
                         UIManager:nextTick(function()
-                            if self_fm.file_chooser and self_fm.file_chooser.item_table then
-                                for _i, item in ipairs(self_fm.file_chooser.item_table) do
-                                    if item.is_file then item.dim = nil end
-                                end
-                                self_fm.file_chooser:updateItems(1, true)
-                            end
-                            self_fm:onToggleSelectMode(true)
-
                             local BookSync = dofile(_plugin_dir .. "book_sync.lua")
-                            local books = {}
-                            for _i, fpath in ipairs(files) do
-                                books[#books + 1] = {
-                                    file_path = fpath,
-                                    path = fpath,
-                                    name = fpath:match("([^/]+)$") or _("Unknown"),
-                                    title = fpath:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
-                                    book_basename = fpath:match("([^/]+)$"):gsub("%.[^%.]+$", ""),
-                                }
-                            end
                             local naming_mode = self.settings.book_naming_mode or "title"
-                            UIManager:show(ConfirmBox:new{
-                                text = string.format(_("Upload %d book(s) to cloud"), #books),
-                                ok_text = _("Continue"),
-                                cancel_text = _("Cancel"),
-                                ok_callback = function()
-                                    BookSync.batchUploadBooks(books, naming_mode, self.settings, self)
-                                end,
-                            })
+                            local selected_files = {}
+                            for _, fpath in ipairs(files) do
+                                selected_files[fpath] = true
+                            end
+                            BookSync.batchUploadFromSelectedFiles(selected_files, naming_mode, self.settings, self)
                         end)
                     end,
                 },
