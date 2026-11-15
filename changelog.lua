@@ -82,7 +82,7 @@ return {
     "Long-press menu actions (upload/download metadata, upload book) and selection-mode Plus menu actions now reuse the existing batch pipelines instead of duplicating logic",
     "Fix book upload from the long-press menu dropping the author field, which broke the title_author naming mode",
     "Flush the currently open book's metadata to disk before checking for its sidecar",
-    "Suppress automatic upload for a book after its automatic download failed (no network, not configured, download errors), to avoid overwriting the cloud with incomplete local metadata; a successful download, a 404 (book not in cloud), or a successful manual upload clears the suppression, and manual upload asks for confirmation while suppressed",
+    "Suppress automatic upload for a book after its automatic download failed (no network, not configured, download errors), to avoid overwriting the cloud with incomplete local metadata; a successful download,or a 404 (book not in cloud) clears the suppression, and manual upload asks for confirmation while suppressed",
     "When enabling automatic upload while automatic download is off, prompt to optionally enable automatic download (merge), to avoid overwriting cloud data on first upload",
     "When enabling Worry-Free Sync Mode with a book currently open, prompt to merge-update the current book first, to avoid overwriting the cloud with data that has not been aligned",
 },
