@@ -154,6 +154,9 @@ function Hooks:hookOnReaderReady()
                 local NetworkMgr = require("ui/network/manager")
                 if not NetworkMgr:isOnline() then
                     self_auto_sync:showNotification(title, _("Auto update failed (Network disconnected)"), nil, false)
+                    if self_auto_sync._incomplete then
+                        self_auto_sync._incomplete[file] = true
+                    end
                     local result = original(...)
                     local ui_instance = ReaderUI.instance
                     if ui_instance and not ui_instance.CloudLibrary and self_plugin then
@@ -167,6 +170,9 @@ function Hooks:hookOnReaderReady()
                 local server = remote.get_server()
                 if not server then
                     self_auto_sync:showNotification(title, _("Auto update failed (Cloud storage not configured)"), nil, false)
+                    if self_auto_sync._incomplete then
+                        self_auto_sync._incomplete[file] = true
+                    end
                     local result = original(...)
                     local ui_instance = ReaderUI.instance
                     if ui_instance and not ui_instance.CloudLibrary and self_plugin then
@@ -178,6 +184,9 @@ function Hooks:hookOnReaderReady()
                 -- 👇 前置检查3：云端目录
                 if not server.url or server.url == "" then
                     self_auto_sync:showNotification(title, _("Auto update failed (Cloud directory not set)"), nil, false)
+                    if self_auto_sync._incomplete then
+                        self_auto_sync._incomplete[file] = true
+                    end
                     local result = original(...)
                     local ui_instance = ReaderUI.instance
                     if ui_instance and not ui_instance.CloudLibrary and self_plugin then
@@ -190,6 +199,9 @@ function Hooks:hookOnReaderReady()
                 local api = remote.get_api(server)
                 if not api then
                     self_auto_sync:showNotification(title, _("Auto update failed (Unsupported cloud service)"), nil, false)
+                    if self_auto_sync._incomplete then
+                        self_auto_sync._incomplete[file] = true
+                    end
                     local result = original(...)
                     local ui_instance = ReaderUI.instance
                     if ui_instance and not ui_instance.CloudLibrary and self_plugin then
@@ -230,11 +242,21 @@ function Hooks:hookOnReaderReady()
                     self_auto_sync:updateLastSync(string.format(_("Metadata sync") .. "-" .. _("Auto sync") .. "(" .. _("Open book") .. ")-" .. _("Download successful") .. "(%s)", mode_desc_for_show))
                     self_auto_sync:writeLog(book, _("Open book"), false, true, nil, download_mode) 
                     self_auto_sync:showNotification(title, _("Auto update successful"), mode_desc_for_show, true)
+                    if self_auto_sync._incomplete then
+                        self_auto_sync._incomplete[file] = nil
+                    end
                 else
                     local error_info = remote.get_error_message(error_type, false, naming_mode)
                     self_auto_sync:writeLog(book, _("Open book"), false, false, error_info.reason, nil, error_info.solution)
                     local fail_msg = string.format(_("Auto update failed (%s)"), error_info.reason)
                     self_auto_sync:showNotification(title, fail_msg, mode_desc_for_show, false)
+                    if self_auto_sync._incomplete then
+                        if error_type == "cloud_file_not_found" then
+                            self_auto_sync._incomplete[file] = nil
+                        else
+                            self_auto_sync._incomplete[file] = true
+                        end
+                    end
                 end
             end
         end
