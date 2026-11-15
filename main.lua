@@ -240,7 +240,31 @@ function CloudLibraryPlugin:init()
                             UIManager:nextTick(function()
                                 local BookSync = dofile(_plugin_dir .. "book_sync.lua")
                                 local naming_mode = self.settings.book_naming_mode or "title"
-                                BookSync.upload_book(file, true, naming_mode, book_props or {})
+                                local props = book_props or {}
+                                local filename = file:match("([^/]+)$") or _("Unknown")
+                                local basename = filename:match("^(.*)%.[^%.]+$") or filename
+                                local title = props.title
+                                if not title or title == "" then
+                                    title = props.display_title
+                                end
+                                if not title or title == "" then
+                                    title = basename
+                                end
+                                local author = props.authors
+                                if type(author) == "table" then
+                                    author = author[1]
+                                end
+                                local books = {
+                                    {
+                                        file_path = file,
+                                        path = file,
+                                        name = filename,
+                                        title = title,
+                                        author = author,
+                                        book_basename = basename,
+                                    },
+                                }
+                                BookSync.batchUploadBooks(books, naming_mode, self.settings, self)
                             end)
                         end,
                     },
