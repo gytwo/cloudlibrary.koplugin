@@ -71,6 +71,7 @@ CloudLibraryPlugin.default_settings = {
 
 
 function CloudLibraryPlugin:init()
+    self.plugin_id = "cloudlibrary"
     local meta = dofile(_plugin_dir .. "_meta.lua")
     self.VERSION = meta.version or "v1.0.0"
     
