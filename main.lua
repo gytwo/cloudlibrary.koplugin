@@ -46,7 +46,7 @@ local CloudLibraryPlugin = WidgetContainer:extend {
 
 CloudLibraryPlugin.default_settings = {
     last_sync = "Never",
-    metadata_naming_mode = "metadata",
+    metadata_naming_mode = "title_author",
     auto_sync_enabled = false,
     auto_upload_on_annotate = false,
     auto_upload_on_close = false,
@@ -58,7 +58,7 @@ CloudLibraryPlugin.default_settings = {
     upload_json = false,
     use_notemark_format = false,
     sync_log_enabled = false,
-    book_naming_mode = "title",
+    book_naming_mode = "title_author",
     book_download_dir = nil,
     override_keep_local_settings = true,
     book_cloud_dir = nil,
@@ -71,7 +71,7 @@ CloudLibraryPlugin.default_settings = {
 
 
 function CloudLibraryPlugin:init()
-    self.plugin_id = "cloudlibrary"
+    self.plugin_id = "cloud_library_plugin"
     local meta = dofile(_plugin_dir .. "_meta.lua")
     self.VERSION = meta.version or "v1.0.0"
     
