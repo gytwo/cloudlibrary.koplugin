@@ -86,4 +86,7 @@ return {
     "When enabling automatic upload while automatic download is off, prompt to optionally enable automatic download (merge), to avoid overwriting cloud data on first upload",
     "When enabling Worry-Free Sync Mode with a book currently open, prompt to merge-update the current book first, to avoid overwriting the cloud with data that has not been aligned",
 },
+["1.4.8"] = {
+    "Fix the issue where auto-sync excluded directories were not persisted",
+},
 }
