@@ -288,32 +288,43 @@ end
 
 M.DownloadDialog = DownloadDialog
 
--- ============================================================
+-- =================================================================
 -- 检查文件路径是否在排除目录中
--- ============================================================
+-- =================================================================
+local util = require("ffi/util")
+
 function M.is_path_excluded(file_path, exclude_dirs)
     if not file_path or not exclude_dirs or #exclude_dirs == 0 then
         return false
     end
-    
+
+    -- 关键：把传入的路径（可能是相对路径）解析为真实绝对路径
+    local real_file = util.realpath(file_path)
+    if not real_file then
+        logger.info("CL_EXCLUDE: realpath failed for file=", tostring(file_path))
+        return false
+    end
+
     local function normalize_path(path)
-        path = path:gsub("\\", "/")  
-        path = path:gsub("/+$", "")   
+        path = path:gsub("\\", "/")
+        path = path:gsub("/+$", "")
         return path
     end
-    
-    local normalized_file = normalize_path(file_path)
-    
+
+    local normalized_file = normalize_path(real_file)
+
     for _, exclude_dir in ipairs(exclude_dirs) do
         local normalized_exclude = normalize_path(exclude_dir)
         if normalized_file:find(normalized_exclude, 1, true) == 1 then
             local next_char = normalized_file:sub(#normalized_exclude + 1, #normalized_exclude + 1)
             if next_char == "/" or next_char == "" then
+                logger.info("CL_EXCLUDE: HIT file=[", normalized_file,
+                    "] by exclude=[", normalized_exclude, "]")
                 return true
             end
         end
     end
-    
+
     return false
 end
 
