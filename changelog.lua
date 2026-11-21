@@ -91,5 +91,6 @@ return {
     "Progress merge: fix incorrect farthest progress selection due to cross-length xpointer comparison",
     "Book_sync: Postpone is_supported_book check, allow all files for upload/download with different upload‑naming branches",
     "Metadata Sync: filter out non‑book files and add relevant prompts."
+    "Book Sync: Swap Root Directory and Parent Directory Buttons in Upload/Download Dialog Folder Quick‑Navigation Row",
 },
 }
