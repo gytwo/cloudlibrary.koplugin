@@ -358,6 +358,11 @@ local function get_all_versions_from_source(source)
         end
     end
     
+    -- 对全部版本做语义版本倒序排序，新版本显示在对话框最上方
+    table.sort(all_versions, function(a, b)
+        return M.is_newer_version(b.tag, a.tag)
+    end)
+    
     return all_versions
 end
 
