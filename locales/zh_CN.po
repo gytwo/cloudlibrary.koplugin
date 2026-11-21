@@ -1056,8 +1056,11 @@ msgstr "下载-覆盖更新"
 msgid "%s metadata for %d book(s)"
 msgstr "将%s %d 本书籍的元数据"
 
-msgid "No files selected"
-msgstr "没有选中任何文件"
+msgid "Selected %d file(s), none are books that support metadata sync"
+msgstr "所选均为非书籍文件（%d个），不支持元数据同步"
+
+msgid "(%d selected file(s) are not books and will be skipped)"
+msgstr "（其中%d个非书籍文件将被跳过）"
 
 msgid "Metadata upload completed: %d success, %d failed"
 msgstr "元数据上传完成: %d 成功, %d 失败"
