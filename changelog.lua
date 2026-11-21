@@ -87,7 +87,8 @@ return {
     "When enabling Worry-Free Sync Mode with a book currently open, prompt to merge-update the current book first, to avoid overwriting the cloud with data that has not been aligned",
 },
 ["1.4.8"] = {
-    "Fix the issue where auto-sync excluded directories were not persisted",
-    "Fix incorrect farthest progress selection due to cross-length xpointer comparison",
+    "Excluded_dir: Fix the issue where auto-sync excluded directories were not persisted",
+    "Progress merge: fix incorrect farthest progress selection due to cross-length xpointer comparison",
+    "Book_sync: Postpone is_supported_book check, allow all files for upload/download with different upload‑naming branches",
 },
 }
