@@ -402,4 +402,19 @@ function M.bookshelfIsInSelectionMode()
     return widget._selection:isActive()
 end
 
+--- 原版严格判断：是否为KOReader支持的书籍文件，排除图片、脚本
+-- @param file_path 本地文件完整路径
+-- @return boolean
+--- 原版严格判断：是否为KOReader支持的书籍文件，排除图片、脚本
+-- @param file_path 本地文件完整路径
+-- @return boolean
+function M.is_supported_book(file_path)
+    local DocumentRegistry = require("document/documentregistry")
+    local util = require("util")
+
+    return DocumentRegistry:hasProvider(file_path)
+        and not DocumentRegistry:isImageFile(file_path)
+        and util.getScriptType(file_path) == nil
+end
+
 return M
