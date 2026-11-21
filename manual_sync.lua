@@ -61,6 +61,13 @@ function ManualSync:syncCurrentBook(is_upload, retry)
     end
     local doc = self.plugin.ui.document
     local file = doc.file
+    
+    -- =====检查是否为书籍=====
+    if not utils.is_supported_book(file) then
+        self:showMsg(_("Metadata sync is only available for book files."))
+        return
+    end
+
     -- 先落盘当前打开书的 settings，确保 sidecar 已生成
     local ReaderUI = require("apps/reader/readerui")
     local current_ui = ReaderUI.instance
@@ -153,6 +160,11 @@ function ManualSync:syncCurrentBookMerge(retry)
     end
     
     local file = doc.file
+   -- =====检查是否为书籍=====
+   if not utils.is_supported_book(file) then
+       self:showMsg(_("Metadata sync is only available for book files."))
+       return
+   end
     -- 先落盘当前打开书的 settings，确保 sidecar 已生成
     local ReaderUI = require("apps/reader/readerui")
     local current_ui = ReaderUI.instance
@@ -590,11 +602,17 @@ function ManualSync:processSelectedFiles(is_upload, is_merge, selected_files)
     local DocSettings = require("docsettings")
     local ui = self.plugin.ui
     local books = {}
-    
+    local total_selected = 0
+    local filtered_count = 0 -- 新增：被过滤掉的非书籍文件
+
     for file, selected in pairs(selected_files) do
         if selected and lfs.attributes(file, "mode") == "file" then
+            total_selected = total_selected + 1
+            if not utils.is_supported_book(file) then
+                filtered_count = filtered_count + 1 -- 统计被过滤条目
+                goto continue
+            end
             local metadata_file = DocSettings:findSidecarFile(file)
-            
             local props = {}
             if ui and ui.bookinfo then
                 props = ui.bookinfo:getDocProps(file, nil, true) or {}
@@ -605,7 +623,6 @@ function ManualSync:processSelectedFiles(is_upload, is_merge, selected_files)
             if type(author) == "table" then
                 author = author[1]
             end
-            
             table.insert(books, {
                 file = file,
                 metadata = metadata_file,
@@ -613,21 +630,25 @@ function ManualSync:processSelectedFiles(is_upload, is_merge, selected_files)
                 book_basename = basename,
                 author = author,
             })
+            ::continue::
         end
     end
-    
+
     if #books == 0 then
-        self:showMsg(_("No files selected"))
+        if total_selected == 0 then
+            self:showMsg(_("No files selected"))
+        else
+            self:showMsg(string.format(_("Selected %d file(s), none are books that support metadata sync"), total_selected))
+        end
         return
     end
-    
+
     local action_text = ""
     if is_upload then
         action_text = _("upload")
     else
-        action_text = is_merge and _("download-merge") or _("download-overwrite")
+        action_text = is_merge and _("download‑merge") or _("download‑overwrite")
     end
-
     local incomplete_count = 0
     if is_upload and self.auto_sync and self.auto_sync._incomplete then
         for _, book in ipairs(books) do
@@ -637,6 +658,7 @@ function ManualSync:processSelectedFiles(is_upload, is_merge, selected_files)
         end
     end
 
+    -- 组装确认弹窗文本
     local confirm_text
     if incomplete_count > 0 then
         confirm_text = string.format(
@@ -644,6 +666,11 @@ function ManualSync:processSelectedFiles(is_upload, is_merge, selected_files)
             incomplete_count, #books)
     else
         confirm_text = string.format(_("%s metadata for %d book(s)"), action_text, #books)
+    end
+
+    -- 如果存在被过滤的文件，追加提示信息到弹窗
+    if filtered_count > 0 then
+        confirm_text = confirm_text .. "\n" .. string.format(_("(%d selected file(s) are not books and will be skipped)"), filtered_count)
     end
 
     UIManager:show(ConfirmBox:new{
