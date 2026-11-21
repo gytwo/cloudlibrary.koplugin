@@ -265,10 +265,20 @@ function M.get_annotation_key(anno)
     return nil
 end
 
+local function normalize_xpointer(xp)
+    if not xp or xp == "" then
+        return ""
+    end
+    -- 把路径里每一段数字（[13]、[9]、text().0 里的 0 等）都填成固定宽度
+    return (xp:gsub("%d+", function(num)
+        return string.format("%08d", tonumber(num))
+    end))
+end
+
 function M.merge_progress(local_data, cloud_data)
-    local local_xp = local_data.last_xpointer or ""
-    local cloud_xp = cloud_data.last_xpointer or ""
-    
+    local local_xp = normalize_xpointer(local_data.last_xpointer)
+    local cloud_xp = normalize_xpointer(cloud_data.last_xpointer)
+
     if cloud_xp > local_xp then
         local_data.last_xpointer = cloud_data.last_xpointer
         local_data.last_page = cloud_data.last_page
