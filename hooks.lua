@@ -136,7 +136,18 @@ function Hooks:hookOnReaderReady()
                 end
                 local title = props.title or props.display_title or 
                               file:match("([^/]+)$"):gsub("%.[^%.]+$", "")
-                
+                              
+                -- ===== 检查是否为书籍 =====               
+                -- 非支持书籍直接跳过打开时自动下载元数据
+                    if not utils.is_supported_book(file) then
+                        local result = original(...)
+                        local ui_instance = ReaderUI.instance
+                        if ui_instance and not ui_instance.CloudLibrary and self_plugin then
+                            ui_instance.CloudLibrary = self_plugin
+                        end
+                        return result
+                    end                
+                    
                 -- ===== 检查自动同步排除目录 =====
                 local exclude_dirs = self_plugin.settings.exclude_dirs or {}
                 if utils.is_path_excluded(file, exclude_dirs) then
@@ -148,6 +159,7 @@ function Hooks:hookOnReaderReady()
                     end
                     return result
                 end
+
                 -- ===================================
                 
                 -- 👇 前置检查1：网络连接
