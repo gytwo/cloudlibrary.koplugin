@@ -88,5 +88,6 @@ return {
 },
 ["1.4.8"] = {
     "Fix the issue where auto-sync excluded directories were not persisted",
+    "Fix incorrect farthest progress selection due to cross-length xpointer comparison",
 },
 }
