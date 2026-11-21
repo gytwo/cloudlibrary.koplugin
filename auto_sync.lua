@@ -87,6 +87,12 @@ function AutoSync:sync(document, is_upload, source)
         return
     end
     
+-- =========检查是否为书籍=========
+    -- 非支持书籍，直接退出，不执行自动元数据同步
+    if not utils.is_supported_book(file) then
+        return
+    end
+    
     local NetworkMgr = require("ui/network/manager")
     if not NetworkMgr:isOnline() then
         if self.settings.auto_sync_notify then
