@@ -181,7 +181,9 @@ local function webdav_list_folder_paged(server, folder_path, include_folders)
                 local is_not_collection = item:find("<[^:]*:resourcetype%s*/>") or
                                           item:find("<[^:]*:resourcetype>%s*</[^:]*:resourcetype>")
                 if is_not_collection then
-                    if show_unsupported or DocumentRegistry:hasProvider(item_name) then
+                    --if show_unsupported or DocumentRegistry:hasProvider(item_name) then
+                    -- 全部放行，只要它是文件，就允许同步
+                    if true then
                         local file_size = tonumber(item:match("<[^:]*:getcontentlength[^>]*>(%d+)</[^:]*:getcontentlength>"))
                         local modification, suffix, mandatory
                         if include_folders then
@@ -279,9 +281,11 @@ end
 -- books: plain images (covers etc.) and the executable scripts (.sh/.py) that
 -- CRE registers only for in-FileManager execution.
 local function is_supported_book(file_path)
-    return DocumentRegistry:hasProvider(file_path)
-        and not DocumentRegistry:isImageFile(file_path)
-        and util.getScriptType(file_path) == nil
+    -- 全部放行，只要它是文件，就允许同步
+    return true
+    --return DocumentRegistry:hasProvider(file_path)
+    --    and not DocumentRegistry:isImageFile(file_path)
+    --    and util.getScriptType(file_path) == nil
 end
 
 local function get_cloud_path(server, cloud_filename)
@@ -301,12 +305,18 @@ end
 
 function M.get_cloud_filename_for_path(book, naming_mode)
     local original_filename = book.file_path:match("([^/]+)$") or "unknown_book"
+
+    -- 非书籍直接使用原始文件名，忽略title、author、命名模式
+    if not is_supported_book(book.file_path) then
+        return sanitize_filename(original_filename)
+    end
+
     local ext = get_file_extension(original_filename)
-    
+
     if naming_mode == "filename" then
         return sanitize_filename(original_filename)
     end
-    
+
     if naming_mode == "title_author" then
         local filename = book.title
         if book.author and book.author ~= "" then
@@ -314,7 +324,7 @@ function M.get_cloud_filename_for_path(book, naming_mode)
         end
         return sanitize_filename(filename) .. ext
     end
-    
+
     local title = book.title
     if not title or title == "" then
         title = strip_extension(original_filename)
@@ -419,35 +429,35 @@ local function build_books_from_selected_files(selected_files, plugin)
     local DocSettings = require("docsettings")
     local ui = plugin and plugin.ui
     local books = {}
-
     for file, selected in pairs(selected_files) do
         if selected and lfs.attributes(file, "mode") == "file" then
-            if is_supported_book(file) then
-                local filename = file:match("([^/]+)$") or _("Unknown")
-                local basename = strip_extension(filename)
+            -- is_supported_book现在返回true，所有文件都会进来
+            local filename = file:match("([^/]+)$") or _("Unknown")
+            local basename = strip_extension(filename)
 
-                local props = {}
-                if ui and ui.bookinfo then
-                    props = ui.bookinfo:getDocProps(file, nil, true) or {}
-                end
-                local title = props.title or props.display_title or basename
-                local author = props.authors
+            local title = basename
+            local author = nil
+
+            -- ✅ 仅真正书籍才读取元数据；脚本、图片、其他文件直接跳过getDocProps
+            if is_supported_book(file) and ui and ui.bookinfo then
+                local props = ui.bookinfo:getDocProps(file, nil, true) or {}
+                title = props.title or props.display_title or basename
+                author = props.authors
                 if type(author) == "table" then
                     author = author[1]
                 end
-
-                table.insert(books, {
-                    file_path = file,
-                    path = file,
-                    name = filename,
-                    title = title,
-                    author = author,
-                    book_basename = basename,
-                })
             end
+
+            table.insert(books, {
+                file_path = file,
+                path = file,
+                name = filename,
+                title = title,
+                author = author,
+                book_basename = basename,
+            })
         end
     end
-
     return books
 end
 
