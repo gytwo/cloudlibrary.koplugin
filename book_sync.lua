@@ -1153,9 +1153,9 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
         if #display_path > 20 then
            display_path = "..." .. util.fixUtf8(display_path:sub(-17), "")
         end
-        
+
         local nav_buttons = {}
-        
+
         -- Left: current directory (click to open browser)
         table.insert(nav_buttons, {
             text = display_path,
@@ -1164,34 +1164,8 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
                 show_browser()
             end
         })
-        
-        -- Middle: parent directory (display path name)
-        local parent_path = get_parent_path(current_path)
-        if parent_path then
-            local parent_display = parent_path
-            if #parent_display > 15 then
-                parent_display = "..." .. util.fixUtf8(parent_display:sub(-12), "")
-            end
-            table.insert(nav_buttons, {
-                text = parent_display,
-                callback = function()
-                    if browse_dialog then
-                        UIManager:close(browse_dialog)
-                        browse_dialog = nil
-                    end
-                    table.insert(browse_history, current_path)
-                    current_path = parent_path
-                    load_books(current_path)
-                end
-            })
-        else
-            table.insert(nav_buttons, {
-                text = "",
-                enabled = false,
-            })
-        end
-        
-        -- Right: root directory
+
+        -- Middle: Root（调换后放到中间位置）
         if current_path ~= root_path then
             table.insert(nav_buttons, {
                 text = _("Root"),
@@ -1207,7 +1181,29 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
                 enabled = false,
             })
         end
-        
+
+        -- Right: 上一级，固定文字，无父目录则灰色不可点击
+        local parent_path = get_parent_path(current_path)
+        if parent_path then
+            table.insert(nav_buttons, {
+                text = _("上一级"),
+                callback = function()
+                    if browse_dialog then
+                        UIManager:close(browse_dialog)
+                        browse_dialog = nil
+                    end
+                    table.insert(browse_history, current_path)
+                    current_path = parent_path
+                    load_books(current_path)
+                end
+            })
+        else
+            table.insert(nav_buttons, {
+                text = _("上一级"),
+                enabled = false,
+            })
+        end
+
         table.insert(buttons, nav_buttons)
         table.insert(buttons, {})
         
