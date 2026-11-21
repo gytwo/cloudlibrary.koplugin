@@ -273,21 +273,6 @@ local function strip_extension(filename)
     return filename
 end
 
--- A file is a syncable book if KOReader has a document provider for it.
--- We use the same test KOReader's own FileManager uses to decide what to show
--- (hasProvider), instead of a hand-maintained extension allowlist. This
--- automatically covers every format the reader can open and stays in sync with
--- it. We then drop the two provider-backed file kinds that are clearly not
--- books: plain images (covers etc.) and the executable scripts (.sh/.py) that
--- CRE registers only for in-FileManager execution.
-local function is_supported_book(file_path)
-    -- 全部放行，只要它是文件，就允许同步
-    return true
-    --return DocumentRegistry:hasProvider(file_path)
-    --    and not DocumentRegistry:isImageFile(file_path)
-    --    and util.getScriptType(file_path) == nil
-end
-
 local function get_cloud_path(server, cloud_filename)
     local api = get_api(server)
     if not api then
@@ -307,7 +292,7 @@ function M.get_cloud_filename_for_path(book, naming_mode)
     local original_filename = book.file_path:match("([^/]+)$") or "unknown_book"
 
     -- 非书籍直接使用原始文件名，忽略title、author、命名模式
-    if not is_supported_book(book.file_path) then
+    if not utils.is_supported_book(book.file_path) then
         return sanitize_filename(original_filename)
     end
 
@@ -431,7 +416,7 @@ local function build_books_from_selected_files(selected_files, plugin)
     local books = {}
     for file, selected in pairs(selected_files) do
         if selected and lfs.attributes(file, "mode") == "file" then
-            -- is_supported_book现在返回true，所有文件都会进来
+
             local filename = file:match("([^/]+)$") or _("Unknown")
             local basename = strip_extension(filename)
 
@@ -439,7 +424,7 @@ local function build_books_from_selected_files(selected_files, plugin)
             local author = nil
 
             -- ✅ 仅真正书籍才读取元数据；脚本、图片、其他文件直接跳过getDocProps
-            if is_supported_book(file) and ui and ui.bookinfo then
+            if utils.is_supported_book(file) and ui and ui.bookinfo then
                 local props = ui.bookinfo:getDocProps(file, nil, true) or {}
                 title = props.title or props.display_title or basename
                 author = props.authors
@@ -478,11 +463,6 @@ function M.upload_book(book_path, show_msg, naming_mode, book_info)
     if lfs.attributes(book_path, "mode") ~= "file" then
         if show_msg then show_notification(_("Book file does not exist"), 2) end
         return false, "file_not_found"
-    end
-    
-    if not is_supported_book(book_path) then
-        if show_msg then show_notification(_("Unsupported file format"), 2) end
-        return false, "unsupported_format"
     end
     
     local server = get_book_server()
@@ -840,7 +820,7 @@ function M.get_cloud_book_list()
     for _, item in ipairs(items) do
         if item.type == "file" then
             local filename = item.text
-            if filename and is_supported_book(filename) then
+            if true then
                 table.insert(books, {
                     name = filename,
                     path = item.url,
@@ -939,7 +919,7 @@ function M.show_cloud_book_dialog(callback, plugin, retry)
                 end
             elseif item.is_file or item.type == "file" then
                 local filename = item.text
-                if filename and is_supported_book(filename) then
+                if true then
                     table.insert(books, {
                         name = filename,
                         path = item.url,
