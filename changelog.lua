@@ -90,5 +90,6 @@ return {
     "Excluded_dir: Fix the issue where auto-sync excluded directories were not persisted",
     "Progress merge: fix incorrect farthest progress selection due to cross-length xpointer comparison",
     "Book_sync: Postpone is_supported_book check, allow all files for upload/download with different upload‑naming branches",
+    "Metadata Sync: filter out non‑book files and add relevant prompts."
 },
 }
