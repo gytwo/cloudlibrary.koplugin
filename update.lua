@@ -60,7 +60,8 @@ local SOURCES = {
         api_url = "https://gitee.com/api/v5/repos/%s/%s/releases/latest",
         list_url = "https://gitee.com/api/v5/repos/%s/%s/releases",
         type = "gitee",
-        prerelease = false,
+        -- 不设 prerelease：Gitee 没有单独的 Pre-release 通道，设成 false 会把标注为
+        -- prerelease 的版本过滤掉。留空即不参与过滤，正式版与预发布混排。
     },
 }
 
@@ -148,6 +149,46 @@ local function request_url(url, timeout)
         return nil
     end
     return data
+end
+
+--- 解析版本号：`v0.7.3-beta3` / `v0.7.3-beta.3` / `v0.7.3` 都取主体 `{0,7,3}`。
+---
+--- 预发布后缀必须先用 `-` 剥掉再按点切分：`tonumber("9-beta1")` 是 nil，
+--- 原来直接把整段喂给 tonumber 会让 `v1.4.9-beta1` 变成 `{1,4,0}`，
+--- 排在 `v1.4.8` 后面，且与其它预发布无法区分。
+---@param s string tag
+---@return integer[] core 主体版本号各段
+---@return string|nil pre 预发布后缀（"beta1" 等），正式版为 nil
+local function parse_ver(s)
+    local str = tostring(s):gsub("^v", "")
+    local core, pre = str:match("^([^-]+)%-?(.*)$")
+    core = core or str
+    local parts = {}
+    for p in core:gmatch("[^.]+") do
+        table.insert(parts, tonumber(p) or 0)
+    end
+    return parts, (pre ~= "" and pre or nil)
+end
+
+--- 语义版本比较：a 比 b 新返回正数，旧返回负数，等价返回 0。
+--- 主体号相同时正式版优先于预发布（v1.4.9 > v1.4.9-beta1）；
+--- 同为预发布时按后缀里的数字比（beta10 > beta9，而不是字典序的 beta10 < beta9）。
+---@return number
+local function compare_ver(a, b)
+    local ap, apre = parse_ver(a)
+    local bp, bpre = parse_ver(b)
+    for i = 1, math.max(#ap, #bp) do
+        local av, bv = ap[i] or 0, bp[i] or 0
+        if av ~= bv then return av - bv end
+    end
+    if apre == bpre then return 0 end
+    if apre == nil then return 1 end   -- a 是正式版
+    if bpre == nil then return -1 end  -- b 是正式版
+    local an = tonumber(apre:match("(%d+)$") or "")
+    local bn = tonumber(bpre:match("(%d+)$") or "")
+    if an and bn and an ~= bn then return an - bn end
+    if apre == bpre then return 0 end
+    return apre > bpre and 1 or -1
 end
 
 -- 获取最新版本信息（从 GitHub，支持 prerelease）
@@ -360,37 +401,14 @@ local function get_all_versions_from_source(source)
     
     -- 对全部版本做语义版本倒序排序，新版本显示在对话框最上方
     table.sort(all_versions, function(a, b)
-        return M.is_newer_version(b.tag, a.tag)
+        return compare_ver(a.tag, b.tag) > 0
     end)
     
     return all_versions
 end
 
 function M.is_newer_version(current, latest)
-    if current == latest then return false end
-    
-    local cur = current:gsub("^v", "")
-    local lat = latest:gsub("^v", "")
-    
-    local cur_parts = {}
-    for part in cur:gmatch("[^.]+") do
-        table.insert(cur_parts, tonumber(part) or 0)
-    end
-    local lat_parts = {}
-    for part in lat:gmatch("[^.]+") do
-        table.insert(lat_parts, tonumber(part) or 0)
-    end
-    
-    for i = 1, math.max(#cur_parts, #lat_parts) do
-        local cur_part = cur_parts[i] or 0
-        local lat_part = lat_parts[i] or 0
-        if lat_part > cur_part then
-            return true
-        elseif lat_part < cur_part then
-            return false
-        end
-    end
-    return false
+    return compare_ver(latest, current) > 0
 end
 
 -- 显示临时提示
